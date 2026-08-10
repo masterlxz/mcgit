@@ -40,13 +40,16 @@ se essa base ainda é válida, antes de assumir um nível de conhecimento.
 
 ---
 
-# Princípios do projeto (do documento de ideação original)
+# Princípios do projeto
 
-1. Git é o motor de versionamento inicial.
-2. Minecraft é o domínio que a ferramenta entende.
+Do documento de ideação original (v1.0, versionamento de mundo) mais os ajustados na revisão
+de escopo pra launcher completo (Sessão 1, v2.0 — ver `CONTEXT.md`/`ARCHITECTURE.md`):
+
+1. Git é o motor de versionamento de mundos.
+2. Minecraft é o domínio que o launcher entende — não só versionamento, o pacote completo (Java, instâncias, mods, contas).
 3. TruthID fornece identidade/autorização e a infraestrutura de pagamento para a camada Web3.
 4. Arweave fornece armazenamento remoto persistente.
-5. CLI primeiro.
+5. **GUI é a interface principal** (revisado — era "CLI primeiro" na v1.0, quando o projeto era só uma ferramenta de linha de comando; um launcher é fundamentalmente gráfico). CLI existe em paralelo, sempre opcional.
 6. Local-first.
 7. Offline-first para as funções básicas.
 8. Não depender de cloud para funcionar.
@@ -58,3 +61,5 @@ se essa base ainda é válida, antes de assumir um nível de conhecimento.
 14. Não expor a complexidade de blockchain ao usuário final.
 15. Features avançadas só depois de um MVP sólido.
 16. Open source puro — o core nunca deixa de ser livre, mesmo que um negócio seja construído em cima no futuro.
+17. Instâncias são isoladas entre si — sem conflito entre diferentes Minecrafts/modloaders/mods instalados.
+18. Nenhum código que toque autenticação Microsoft, CurseForge ou API de skins antes da revisão legal/licenciamento da Fase 0 (ver `CONTEXT.md` §Legal & Licensing).

@@ -64,8 +64,80 @@ básico, roadmap sugerido (Fase 0-7) e uma lista extensa de perguntas técnicas 
   `ARCHITECTURE.md` e `PHASE.md` mais cedo nesta mesma sessão. `INDEX.md` e `README.md`
   atualizados para não referenciar mais o arquivo removido.
 
-**Estado ao final da sessão**: Fase 0 em andamento. Feito: estrutura de mundo, formato `.mca`,
-NBT, benchmark de Git puro com mundo real (crescimento + restauração). Falta: repetir o
+**Estado da sessão nesse ponto**: Fase 0 em andamento. Feito: estrutura de mundo, formato
+`.mca`, NBT, benchmark de Git puro com mundo real (crescimento + restauração). Falta: repetir o
 benchmark com mundo maior e mais sessões, testar edição de bloco real (não só metadado),
 avaliar Git LFS como comparação, decidir `git2`/libgit2 vs binário do sistema, esboçar
 integração TruthID/Arweave, e estruturar o workspace Rust (`mcgit-core`/`mcgit-cli`).
+
+---
+
+### Revisão de escopo: de ferramenta de versionamento pra launcher completo (mesma sessão)
+
+**Contexto**: usuário trouxe um segundo documento de ideação (não salvo como arquivo — colado
+diretamente na conversa), bem mais ambicioso: um **launcher de Minecraft multiplataforma**
+inspirado em Prism Launcher/Modrinth App/ATLauncher, onde o versionamento de mundos via Git
+(tudo que o mcgit era até aqui) vira só um módulo entre vários — autenticação Microsoft, Java,
+instâncias, mods, modpacks, resource packs, shaders, skins, backup inteligente,
+compartilhamento de mundos com reprodutibilidade de ambiente, e (mais adiante) colaboração e
+marketplace. Pedido explícito: **atualizar o `project/` pra essa visão futura, sem implementar
+nada agora** ("não é pra hoje").
+
+**Inconsistências identificadas e resolvidas com o usuário** (perguntas feitas antes de mexer
+nos docs, conforme pedido: "qualquer inconsistência pode me perguntar"):
+
+1. **Identidade do projeto** — "mcgit" continua sendo o nome do produto inteiro (o launcher),
+   não vira só o nome de um módulo interno. Decisão do usuário: **manter "mcgit" como nome do
+   launcher completo**.
+2. **Reconciliação de fases** — o `PHASE.md` antigo (Fase 0-7, só versionamento) e o roadmap do
+   prompt novo (Fase 1-5, launcher inteiro) tinham numeração e escopo conflitantes. Decisão:
+   **reescrever `PHASE.md` do zero como o roadmap do launcher**, reencaixando tudo que já
+   existia (a Fase 0 de pesquisa de mundo/Git, já com resultados reais, e as Fases 1-7 antigas
+   do mcgit-ferramenta) dentro da nova estrutura — nada foi descartado.
+3. **Stack** — o prompt novo pedia pra não assumir Rust+Tauri sem reavaliar, dado o escopo bem
+   maior (gerenciar processos de Java/Minecraft, OAuth, downloads de mods). Decisão do usuário:
+   **manter Rust + Tauri + React/TypeScript travados**, sem reabrir a avaliação.
+
+**O que foi atualizado**:
+- `CONTEXT.md` reescrito como **PRD v2.0** (v1.0 preservada como base, agora um módulo do PRD
+  maior): visão do launcher, conceitos novos (Instance, Java Runtime, Account, Modloader,
+  Mod/Modpack, Resource Pack/Shader, Skin, Environment/Reproducibility Metadata, Backup
+  Targets), fluxos novos (criação de instância, login Microsoft, instalação de modpack,
+  compartilhamento de mundo), arquitetura de módulos, filosofia de interface (GUI é o produto
+  principal — ver item 4 abaixo), requisitos de segurança expandidos, requisitos
+  multiplataforma, non-goals revisados, e uma seção nova **Legal & Licensing Considerations**
+  (requisitos da Microsoft/Mojang pra launchers de terceiros, ToS CurseForge vs Modrinth,
+  redistribuição de mods, API de skins — bloqueia código dessas áreas, não bloqueia pesquisa).
+- `ARCHITECTURE.md`: nova seção **Arquitetura de Módulos** (Authentication, Java Manager,
+  Instance Manager, Mod/Modpack Manager, Skin Manager, World Manager, Git Engine, Backup
+  Engine, Arweave Storage, TruthID Integration, Game Runner) com as abstrações
+  `StorageProvider` (Local/Cloud/Arweave) e `AuthenticationProvider` (Microsoft/TruthID), e uma
+  proposta inicial de workspace Rust (crates por módulo + apps `cli`/`desktop`). Tabela de
+  decisões expandida com itens novos (banco local SQLite tentativo, gerenciamento de Java,
+  integração de modpacks, fluxo OAuth Microsoft, armazenamento de credenciais). O benchmark de
+  Git da Fase 0 original foi mantido intacto — continua válido, só reencaixado.
+- **`ARCHITECTURE.md` §Interface — decisão revisada**: "CLI primeiro" (v1.0) virou **"GUI
+  primeiro"** — um launcher é fundamentalmente gráfico; CLI passa a ser opcional/paralela, não
+  um requisito do MVP. Refletido também em `GUIDELINES.md` (lista de princípios) e `OVERVIEW.md`.
+- `PHASE.md` reescrito do zero: **Fase 0 a Fase 10**. Fase 0 ganhou os 25 itens de pesquisa
+  arquitetural do prompt novo (viabilidade, APIs oficiais, licenciamento, schema de banco,
+  fluxo de auth, etc.) somados ao que já tinha sido feito/planejado pro versionamento de mundo.
+  Fase 1 virou o MVP do launcher completo (absorvendo o antigo "MVP local" do mcgit-ferramenta
+  como um pedaço dela). Fases 2, 4, 6, 9 mapeiam diretamente pras antigas Fases 2-6 do
+  mcgit-ferramenta (qualidade, minecraft-aware diffing, branching, servidores). Fases 3, 5, 7,
+  8, 10 são novas (modloaders/mods/modpacks; skins/backup/sync; Arweave+TruthID; compartilhamento
+  e reprodutibilidade; colaboração/marketplace/social).
+- `OVERVIEW.md`, `README.md`, `ROADMAP.md`, `INDEX.md`, `GUIDELINES.md`: atualizados pra
+  refletir a nova identidade, a lista de fases 0-10, e remover referências à numeração antiga.
+  `ROADMAP.md` perdeu os itens que viraram fases concretas (GUI, multiplayer) e ganhou uma nova
+  leva de perguntas técnicas em aberto específicas do launcher (Java multiplataforma, isolamento
+  de instância, CurseForge vs Modrinth, etc.).
+
+**Importante**: nenhum código de produto foi escrito nesta revisão — só documentação, a pedido
+explícito do usuário ("não é pra hoje"). O trabalho de código da Fase 0 (benchmark de Git,
+`mca-bench`) continua de pé e válido, sem qualquer alteração.
+
+**Estado ao final da sessão**: `project/` reflete a visão de launcher completo (PRD v2.0,
+roadmap Fase 0-10). Próximo passo natural, quando o usuário quiser retomar código: fechar os
+itens restantes da Fase 0 (tanto os de versionamento quanto os novos de arquitetura/launcher)
+antes de começar a Fase 1.
