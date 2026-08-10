@@ -1,21 +1,14 @@
-# Linguagem ainda não decidida (ver project/ARCHITECTURE.md) — ajustar quando a Fase 0 concluir
-
-# Rust (se escolhida)
-/target/
-
-# Python (se escolhida)
-__pycache__/
-*.pyc
-.venv/
-venv/
+# Rust
+target/
 
 # Environment files
 .env
 .env.*
 !.env.example
 
-# Mundos Minecraft de teste (não versionar mundos reais de benchmark aqui)
+# Fase 0: mundos reais usados como cobaia e repositórios git de benchmark descartáveis
 /benchmarks/worlds/
+/benchmarks/git-bench/
 
 # OS
 .DS_Store

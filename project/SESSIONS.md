@@ -34,7 +34,31 @@ básico, roadmap sugerido (Fase 0-7) e uma lista extensa de perguntas técnicas 
 - Criados `README.md`, `LICENSE` (MIT) e `.gitignore` na raiz do repositório.
 - Repositório git inicializado.
 
-**Estado ao final da sessão**: Fase 0 (Pesquisa) não iniciada. Nenhum código escrito ainda.
-Próximo passo natural: começar a pesquisa da Fase 0 (estrutura de mundos Minecraft, `.mca`,
-NBT, benchmarks de Git com mundos reais) antes de decidir linguagem e escrever qualquer código
-de produto.
+- Iniciada a Fase 0 (Pesquisa) na mesma sessão:
+  - Usuário cedeu um mundo real e antigo ("Medieval", 40M, tinha backup fora) como cobaia —
+    copiado para `benchmarks/worlds/medieval/` (fora do controle de versão).
+  - Confirmado empiricamente que `region/` domina o tamanho do mundo (38M de 40M).
+  - Explicado o formato `.mca` (Anvil): header de 1024 offsets/timestamps + chunks comprimidos
+    individualmente em setores de 4KiB próprios; NBT como formato de dados do jogo.
+  - Criada `benchmarks/mca-bench` (ferramenta Rust descartável, `fastnbt`+`fastanvil`) capaz de
+    listar/inspecionar/mutar chunks reais de um `.mca` (mutação usada: incrementar
+    `InhabitedTime`, campo NBT real que o próprio Minecraft atualiza).
+  - Criado `benchmarks/run-benchmark.sh`: cria um repo git descartável com o mundo, commita um
+    baseline, simula 6 "sessões de jogo" (mutações reais em 2-3 chunks por sessão na região
+    `r.0.0.mca`), e mede o crescimento do `.git`.
+  - **Resultado**: sem compactar, o `.git` cresce ~5.3M por snapshot (objetos soltos nunca
+    fazem delta). Depois de `git gc --aggressive`, 7 snapshots ficam do tamanho de ~1 (27.3M) —
+    o delta do Git aproveita bem o fato de que só ~0,3% dos bytes do arquivo mudam por sessão
+    (chunks não tocados ficam byte-idênticos e no mesmo offset). Isso **contraria parcialmente**
+    a hipótese inicial (de que a recompressão zlib por chunk atrapalharia o delta). Detalhes,
+    ressalvas e o que ainda falta testar: `ARCHITECTURE.md` §Benchmark.
+  - Restauração testada: `git checkout` de um snapshot antigo reproduziu o `.mca` bit-a-bit
+    idêntico ao original (conferido por hash SHA-256).
+  - `PHASE.md` (Fase 0) e `ARCHITECTURE.md` atualizados com os itens concluídos e os dados do
+    benchmark. `.gitignore` ajustado para ignorar `benchmarks/worlds/` e `benchmarks/git-bench/`.
+
+**Estado ao final da sessão**: Fase 0 em andamento. Feito: estrutura de mundo, formato `.mca`,
+NBT, benchmark de Git puro com mundo real (crescimento + restauração). Falta: repetir o
+benchmark com mundo maior e mais sessões, testar edição de bloco real (não só metadado),
+avaliar Git LFS como comparação, decidir `git2`/libgit2 vs binário do sistema, esboçar
+integração TruthID/Arweave, e estruturar o workspace Rust (`mcgit-core`/`mcgit-cli`).

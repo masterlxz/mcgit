@@ -1,0 +1,10 @@
+[package]
+name = "mca-bench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+fastanvil = "0.32.0"
+fastnbt = "2.6.3"
+flate2 = "1.1.9"

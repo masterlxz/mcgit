@@ -1,6 +1,6 @@
 # mcgit — Estado do Projeto
 
-> Última atualização: 2026-08-10 (Sessão 1 — ideação inicial, estrutura de projeto criada)
+> Última atualização: 2026-08-10 (Sessão 1 — estrutura de projeto criada; Fase 0 em andamento, primeiro benchmark de Git com mundo real feito)
 
 ---
 

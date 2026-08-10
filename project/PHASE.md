@@ -11,13 +11,13 @@ checklist resumido de `OVERVIEW.md` ao final de cada sessão.
 antes de escrever código de produto. Nada aqui deve virar código do MVP diretamente — é
 investigação e benchmark.
 
-- [ ] Entender a estrutura de diretórios de um mundo Minecraft (single-player e servidor)
-- [ ] Entender o formato `.mca` (Anvil region format)
-- [ ] Entender NBT (estrutura, bibliotecas existentes na(s) linguagem(ns) candidata(s))
-- [ ] Testar Git puro (`git init && git add && git commit`) com mundos reais de tamanhos variados
-- [ ] Medir o tamanho do repositório `.git` resultante após múltiplos snapshots
-- [ ] Testar restauração (`git checkout`/`git restore` equivalente) e validar integridade do mundo restaurado
-- [ ] Avaliar Git LFS para `.mca` e comparar tamanho/performance contra Git puro
+- [x] Entender a estrutura de diretórios de um mundo Minecraft (single-player e servidor) — confirmado no mundo real "Medieval": `region/` domina o tamanho (38M de 40M)
+- [x] Entender o formato `.mca` (Anvil region format) — header de 1024 offsets + 1024 timestamps, chunks comprimidos individualmente em setores de 4KiB próprios
+- [x] Entender NBT (estrutura, bibliotecas existentes em Rust) — usando `fastnbt`/`fastanvil`, funcionaram de primeira contra um mundo real
+- [x] Testar Git puro (`git init && git add && git commit`) com mundo real — ver benchmark completo em `ARCHITECTURE.md` §Benchmark
+- [x] Medir o tamanho do repositório `.git` resultante após múltiplos snapshots — feito para 1 mundo/1 região/6 sessões pequenas; falta repetir com mundo maior e mais sessões (ver ressalvas em `ARCHITECTURE.md`)
+- [x] Testar restauração (`git checkout`) e validar integridade do mundo restaurado — `sha256sum` idêntico entre original e restaurado
+- [ ] Avaliar Git LFS para `.mca` e comparar tamanho/performance contra Git puro — ainda não feito; Git puro já parece viável, então isso vira "confirmar que LFS não é necessário" em vez de "escolher entre os dois às cegas"
 - [x] ~~Decidir linguagem principal (Rust vs Python)~~ — **Rust decidido na Sessão 1** (ver `ARCHITECTURE.md`), sem esperar os benchmarks. Os itens de benchmark acima continuam de pé para orientar a estratégia de armazenamento, agora só no ecossistema Rust.
 - [ ] Decidir como o mcgit vai chamar o Git (binário do sistema vs `git2`/libgit2) — registrar em `ARCHITECTURE.md`
 - [ ] Esboçar como o TruthID será integrado ao mcgit (sem implementar ainda)

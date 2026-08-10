@@ -19,7 +19,7 @@ Stack principal:
 # Status Geral
 
 ```
-Fase 0 — Pesquisa                       [ ] Não iniciada
+Fase 0 — Pesquisa                       [~] Em andamento
 Fase 1 — MVP local                      [ ] Não iniciada
 Fase 2 — Qualidade                      [ ] Não iniciada
 Fase 3 — Minecraft-aware                [ ] Não iniciada
