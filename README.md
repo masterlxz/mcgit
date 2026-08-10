@@ -17,10 +17,10 @@ local-first without it.
 
 ## Status
 
-Early stage — Fase 0 (research), no code yet. See [`project/INDEX.md`](project/INDEX.md) for
-the full project state, [`project/CONTEXT.md`](project/CONTEXT.md) for the PRD, and
-[`project/PHASE.md`](project/PHASE.md) for the phased plan. The original brainstorm document
-is [`minecraft-git-versioner-idea-v2.md`](minecraft-git-versioner-idea-v2.md).
+Fase 0 (research) in progress — first real-world Git benchmark done, no product code yet. See
+[`project/INDEX.md`](project/INDEX.md) for the full project state, [`project/CONTEXT.md`](project/CONTEXT.md)
+for the PRD, and [`project/PHASE.md`](project/PHASE.md) for the phased plan. `project/` is the
+single source of truth for this project going forward.
 
 ## Principles
 

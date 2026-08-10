@@ -14,8 +14,26 @@ ideias de produto, perguntas técnicas em aberto e a visão de monetização.
   em paralelo ao armazenamento descentralizado via TruthID + Arweave (que deve ser
   tratado como opção de primeira classe da arquitetura, não um extra de segunda categoria).
 - **Storage self-hosted**: terceira opção de remote além de Git tradicional e Arweave.
-- **GUI/TUI** (Fase 7): interface visual de histórico, comparação e restauração — mockup
-  inicial já esboçado no documento de ideação original (`../minecraft-git-versioner-idea-v2.md` §11).
+- **GUI/TUI** (Fase 7): interface visual de histórico, comparação e restauração. Mockup inicial
+  (do brainstorm original, Sessão 1):
+
+  ```text
+  Minecraft World
+  ────────────────────────────────
+
+  Snapshots
+
+  ● Hoje 18:30
+    Construí a cidade
+
+  ○ Hoje 15:10
+    Antes da cidade
+
+  ○ Ontem 21:43
+    Comecei a farm
+
+  [ Restore ] [ Compare ] [ Branch ]
+  ```
 
 ---
 

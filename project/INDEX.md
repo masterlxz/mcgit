@@ -20,10 +20,10 @@ Leia o arquivo relevante para o que você precisa:
 | Roadmap, evoluções planejadas, monetização, backlog | `ROADMAP.md` |
 | Log completo de sessões de trabalho | `SESSIONS.md` |
 
-O documento original de ideação (brainstorm bruto, com todos os diagramas e a lista completa
-de perguntas técnicas em aberto) está em `../minecraft-git-versioner-idea-v2.md`, na raiz do
-repositório. Os arquivos desta pasta são a versão organizada e "viva" dessa ideia — atualizada
-a cada sessão, enquanto o documento original fica congelado como registro histórico.
+Esta pasta (`project/`) é a única base do projeto — não existe mais um documento de ideação
+separado na raiz do repositório. O brainstorm original foi incorporado a estes arquivos na
+Sessão 1 e removido em seguida; o que estava nele (visão, diagramas, perguntas técnicas em
+aberto) está espalhado por `CONTEXT.md`, `ARCHITECTURE.md`, `PHASE.md` e `ROADMAP.md`.
 
 **Ao começar uma sessão**: Diga ao Claude "leia os arquivos em `project/` e me ajude a continuar"
 **Ao terminar uma sessão**: Atualize o Log de Sessões em `SESSIONS.md` e marque etapas concluídas. Se resolveu uma pendência, atualize `PENDING.md`.

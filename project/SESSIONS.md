@@ -56,6 +56,13 @@ básico, roadmap sugerido (Fase 0-7) e uma lista extensa de perguntas técnicas 
     idêntico ao original (conferido por hash SHA-256).
   - `PHASE.md` (Fase 0) e `ARCHITECTURE.md` atualizados com os itens concluídos e os dados do
     benchmark. `.gitignore` ajustado para ignorar `benchmarks/worlds/` e `benchmarks/git-bench/`.
+- **Documento de ideação original removido**: `minecraft-git-versioner-idea-v2.md` (raiz do
+  repositório) apagado pelo usuário durante a sessão, e removido de vez a pedido dele — decisão
+  explícita de que **`project/` é a única base do projeto daqui pra frente**, sem um documento
+  de brainstorm separado convivendo com os docs "vivos". O conteúdo relevante que só existia lá
+  (mockup de GUI) foi movido para `ROADMAP.md`; o resto já tinha sido incorporado a `CONTEXT.md`,
+  `ARCHITECTURE.md` e `PHASE.md` mais cedo nesta mesma sessão. `INDEX.md` e `README.md`
+  atualizados para não referenciar mais o arquivo removido.
 
 **Estado ao final da sessão**: Fase 0 em andamento. Feito: estrutura de mundo, formato `.mca`,
 NBT, benchmark de Git puro com mundo real (crescimento + restauração). Falta: repetir o
