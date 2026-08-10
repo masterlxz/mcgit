@@ -1,0 +1,26 @@
+# Linguagem ainda não decidida (ver project/ARCHITECTURE.md) — ajustar quando a Fase 0 concluir
+
+# Rust (se escolhida)
+/target/
+
+# Python (se escolhida)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Mundos Minecraft de teste (não versionar mundos reais de benchmark aqui)
+/benchmarks/worlds/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/
+.idea/
