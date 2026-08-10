@@ -18,13 +18,14 @@ investigação e benchmark.
 - [ ] Medir o tamanho do repositório `.git` resultante após múltiplos snapshots
 - [ ] Testar restauração (`git checkout`/`git restore` equivalente) e validar integridade do mundo restaurado
 - [ ] Avaliar Git LFS para `.mca` e comparar tamanho/performance contra Git puro
-- [ ] Decidir linguagem principal (Rust vs Python) com base nos resultados acima — registrar em `ARCHITECTURE.md`
-- [ ] Decidir como o mcgit vai chamar o Git (binário do sistema vs biblioteca) — registrar em `ARCHITECTURE.md`
+- [x] ~~Decidir linguagem principal (Rust vs Python)~~ — **Rust decidido na Sessão 1** (ver `ARCHITECTURE.md`), sem esperar os benchmarks. Os itens de benchmark acima continuam de pé para orientar a estratégia de armazenamento, agora só no ecossistema Rust.
+- [ ] Decidir como o mcgit vai chamar o Git (binário do sistema vs `git2`/libgit2) — registrar em `ARCHITECTURE.md`
 - [ ] Esboçar como o TruthID será integrado ao mcgit (sem implementar ainda)
 - [ ] Esboçar uma estratégia preliminar para Arweave (sem implementar ainda)
+- [ ] Estruturar o projeto Rust como workspace: crate `mcgit-core` (lógica pura) + crate/binário `mcgit-cli` que a consome — preparar terreno para o app Tauri da Fase 7 sem duplicar lógica depois
 
-**Critério de saída da Fase 0**: decisões de linguagem e de estratégia de armazenamento
-registradas em `ARCHITECTURE.md` com dados de benchmark que as sustentem, não só preferência.
+**Critério de saída da Fase 0**: estratégia de armazenamento (Git puro vs LFS vs camada própria)
+registrada em `ARCHITECTURE.md` com dados de benchmark que a sustentem, não só preferência.
 
 ---
 
@@ -117,7 +118,11 @@ mcgit checkout main
 
 ## Fase 7 — Interface
 
-- [ ] Decidir TUI vs GUI (ou ambos)
+Stack decidida na Sessão 1: **Tauri + Rust (backend) + React/TypeScript (frontend)**, mesma
+combinação do `truthid/desktop`. O app é uma casca sobre a crate `mcgit-core` já usada pelo
+`mcgit-cli` — nenhuma lógica de versionamento é reescrita para a GUI.
+
+- [ ] Scaffold do app Tauri consumindo `mcgit-core` como dependência
 - [ ] Histórico visual
 - [ ] Comparação visual entre versões
 - [ ] Restauração pela interface

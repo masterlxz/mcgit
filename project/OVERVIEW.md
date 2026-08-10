@@ -8,9 +8,10 @@ Camada futura (não-MVP): backup remoto descentralizado via **Arweave**, com ide
 pagamento de taxas intermediados pelo **TruthID** (`../truthid`, projeto já existente e em produção).
 
 Stack principal:
-- **Linguagem**: em aberto — decidir na Fase 0 (Rust vs Python), ver `ARCHITECTURE.md`
-- **Motor de versionamento**: Git (via biblioteca ou binário `git` do sistema — decidir na Fase 0)
-- **Interface**: CLI primeiro; TUI/GUI são possibilidades de fases futuras
+- **Linguagem**: Rust ✓ (decidido) — ver `ARCHITECTURE.md`
+- **Core**: crate `mcgit-core` (lógica de versionamento), consumida pelo binário CLI e, depois, pelo app Tauri
+- **Motor de versionamento**: Git (via binário do sistema ou `git2`/libgit2 — detalhe a decidir na Fase 0)
+- **Interface**: CLI primeiro (Fase 1); GUI Tauri + React/TypeScript ✓ (decidido, mesma stack do `truthid/desktop`) na Fase 7
 - **Backup remoto (futuro)**: TruthID (identidade + pagamento) + Arweave (armazenamento)
 
 ---

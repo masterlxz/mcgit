@@ -14,8 +14,15 @@ básico, roadmap sugerido (Fase 0-7) e uma lista extensa de perguntas técnicas 
 - Perguntas de maturação feitas ao usuário e decisões tomadas:
   - **Modo de trabalho**: modo ensino (devagar) — explicar conceitos antes de codar, um de
     cada vez, com analogias, esperando confirmação antes de avançar. Registrado em `GUIDELINES.md`.
-  - **Linguagem do MVP**: decidir na Fase 0, com base em benchmarks reais (Rust vs Python).
-    Não travar a decisão agora. Registrado em `ARCHITECTURE.md` como decisão em aberto.
+  - **Linguagem do MVP**: inicialmente deixada em aberto (decidir na Fase 0 via benchmark).
+    Revisado na mesma sessão: usuário propôs travar **Rust com Tauri no backend e React/TS no
+    frontend**, reaproveitando a stack do `truthid/desktop`. Decisão: **Rust travado como
+    linguagem** (não espera mais o benchmark da Fase 0), e **Tauri + React/TS travado como
+    stack de GUI da Fase 7** — mas o MVP (Fase 1) continua CLI-only, seguindo o princípio
+    "CLI primeiro" já registrado. Arquitetura ajustada para separar a lógica em uma crate
+    `mcgit-core`, consumida tanto pelo binário CLI (`mcgit-cli`, Fase 1) quanto pelo app Tauri
+    (Fase 7), sem duplicar lógica de versionamento entre os dois. Registrado em
+    `ARCHITECTURE.md`, `OVERVIEW.md` e `PHASE.md` (Fase 0 e Fase 7).
   - **Repositório git**: iniciar `git init` já nesta sessão, como projeto próprio e separado
     do `truthid`.
   - **Monetização**: open source puro (MIT), no mesmo espírito do protocolo TruthID. Intenção
