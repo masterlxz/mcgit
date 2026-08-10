@@ -10,7 +10,7 @@ checklist resumido de `OVERVIEW.md` ao final de cada sessão.
 
 ---
 
-## Fase 0 — Pesquisa & Arquitetura
+## Fase 0 — Pesquisa & Arquitetura ✅ (encerrada na Sessão 1 — ver ressalvas no fim da fase)
 
 **Objetivo**: entender o domínio (mundos Minecraft *e* o ecossistema de launchers/mods/Java/contas)
 e validar/descartar premissas técnicas antes de escrever código de produto. Nada aqui deve virar
@@ -27,38 +27,60 @@ código do MVP diretamente — é investigação, benchmark e desenho de arquite
 
 Detalhes completos do benchmark: `ARCHITECTURE.md` §Benchmark.
 
-### Falta (versionamento de mundo — continuação)
+### Decidido por análise (Sessão 1, fechamento da Fase 0 — sem novo experimento)
 
-- [ ] Avaliar Git LFS para `.mca` e comparar tamanho/performance contra Git puro
-- [ ] Testar edição de bloco real (não só metadado como `InhabitedTime`) — mutar block-states de verdade
-- [ ] Repetir o benchmark com mundo maior e mais sessões (10s-100s), múltiplas regiões por sessão
-- [ ] Revalidar a suposição de "bytes ficam estáveis entre saves" contra um mundo salvo pelo servidor Java oficial (não só pelo `fastanvil`)
-- [ ] Decidir como o Git Engine vai chamar o Git (binário do sistema vs `git2`/libgit2) — registrar em `ARCHITECTURE.md`
-- [ ] Decidir se/como o mcgit dispara `git gc`/repack periodicamente (indício forte a favor, ver benchmark)
+Orçamento de tokens curto nesta sessão: as decisões abaixo foram tomadas raciocinando a partir
+do benchmark já feito + conhecimento de como Git e outros launchers resolvem isso, não com
+novos testes. São decisões provisórias — reabrir se a Fase 1 mostrar que alguma está errada.
 
-### Novo (launcher completo — do escopo expandido)
+- [x] Git LFS: **não usar no MVP.** O benchmark já mostrou Git puro + `git gc` periódico
+  resolvendo o caso comum (7 snapshots ≈ tamanho de 1). LFS troca esse ganho por uma
+  dependência extra (servidor LFS do lado do remote); só reavaliar se um mundo real em
+  produção mostrar o contrário.
+- [x] Como chamar o Git: **binário `git` do sistema via subprocess**, não `git2`/libgit2 — mais
+  simples, sem custo de build/linking cross-platform de uma lib C. `git2` fica de reserva se
+  algum dia a CLI do git não der conta de algo fino o suficiente.
+- [x] Compactação: **mcgit dispara `git gc` automaticamente** (após N snapshots ou em
+  background), não depende só do auto-gc padrão do Git — o benchmark mostrou que sem isso o
+  repositório incha rápido demais.
 
-- [ ] Analisar viabilidade técnica do launcher como um todo
-- [ ] Identificar APIs oficiais necessárias (Microsoft/Mojang auth, Minecraft version manifest, Modrinth, CurseForge, skins)
-- [ ] Identificar limitações legais/licenciamento (ver `CONTEXT.md` §Legal & Licensing) — **bloqueia código de auth/mods/skins, não bloqueia pesquisa**
-- [ ] Analisar como launchers existentes (Prism Launcher, Modrinth App, ATLauncher) implementam instalação e execução do Minecraft
-- [ ] Propor/validar a arquitetura de módulos (`ARCHITECTURE.md` §Arquitetura de Módulos) — refinar conforme aprendizado
-- [ ] Confirmar/documentar a justificativa da stack (Rust + Tauri + React/TS) — já decidida, documentar o porquê formalmente
-- [ ] Definir estrutura de diretórios do workspace Rust (proposta inicial já em `ARCHITECTURE.md`)
-- [ ] Definir os módulos e suas responsabilidades em detalhe (interfaces entre crates)
-- [ ] Definir o schema do banco local (SQLite tentativo — tabelas: instances, accounts, worlds, mods, modpacks, java_installations, backups, git_repositories, arweave_uploads, skins, settings)
-- [ ] Definir APIs/interfaces internas entre módulos (traits Rust, ex.: `StorageProvider`, `AuthenticationProvider`)
-- [ ] Definir o fluxo de autenticação Microsoft (OAuth) em detalhe
-- [ ] Definir a estratégia de gerenciamento de Java (detecção, download, múltiplas versões simultâneas)
-- [ ] Definir a estratégia de gerenciamento de instâncias (isolamento de arquivos, configs, JVM args)
-- [ ] Definir a estratégia de gerenciamento de modpacks (Modrinth primeiro? CurseForge depois? resolução de dependências)
-- [ ] Definir estratégia de snapshots e backups (local vs cloud vs Arweave, como isso se relaciona com o Git Engine)
-- [ ] Esboçar a integração futura com Arweave (sem implementar)
-- [ ] Definir como o TruthID poderia se integrar sem criar acoplamento cedo (abstração `AuthenticationProvider`)
-- [ ] Definir o modelo de segurança completo (armazenamento de credenciais por SO, criptografia antes de upload)
-- [ ] Definir a arquitetura multiplataforma (abstrações de OS/filesystem/Java/processo/credenciais)
-- [ ] Confirmar/refinar a definição do MVP (Fase 1, abaixo)
-- [ ] Dividir o desenvolvimento em milestones dentro de cada fase abaixo
+### Adiado, não-bloqueante pra Fase 1 (validação empírica futura)
+
+- [ ] Testar edição de bloco real (block-states packed), não só metadado
+- [ ] Repetir o benchmark com mundo maior e mais sessões (10s-100s)
+- [ ] Revalidar contra um mundo salvo pelo servidor Java oficial (não só `fastanvil`)
+
+### Launcher — decidido por análise (Sessão 1)
+
+- [x] Viabilidade técnica: **viável** — todos os componentes (OAuth, download de assets, Java,
+  execução de processo, Git) já são resolvidos por launchers existentes; o diferencial do
+  mcgit é a composição (Git + UX simples), não uma técnica inédita.
+- [x] APIs oficiais identificadas: Microsoft Identity Platform (OAuth) → Xbox Live → XSTS →
+  Minecraft Services API (posse do jogo, perfil, skins); Mojang piston-meta (manifesto de
+  versões/libraries/natives); Modrinth API (aberta); CurseForge API (API key aprovada — ver
+  Legal & Licensing). Detalhe do fluxo: `ARCHITECTURE.md` §Fluxo de Autenticação Microsoft.
+- [x] Como launchers existentes resolvem isso: manifesto de versão → baixar client jar +
+  libraries + natives → resolver Java → montar argumentos JVM → executar. Prism/MultiMC usam
+  pastas de instância isoladas + bibliotecas compartilhadas num cache global — replicamos o
+  conceito de isolamento, não o formato de arquivo deles.
+- [x] Arquitetura de módulos, stack, estrutura de diretórios, módulos/responsabilidades, schema
+  de banco, interfaces internas, fluxo de auth Microsoft, gerenciamento de Java, gerenciamento
+  de instâncias, arquitetura multiplataforma: todos detalhados em `ARCHITECTURE.md` (seções
+  novas desta sessão).
+- [x] Gerenciamento de modpacks: Modrinth primeiro (API aberta), CurseForge condicionado à
+  revisão de ToS — já refletido em `PHASE.md` Fase 3.
+- [x] Estratégia de snapshots/backups: `CONTEXT.md` §Backup Targets + `PHASE.md` Fase 2/5.
+- [x] Integração Arweave/TruthID sem acoplamento cedo: abstrações `StorageProvider`/
+  `AuthenticationProvider`, `ARCHITECTURE.md`.
+- [x] Modelo de segurança: `CONTEXT.md` §Security Requirements.
+- [x] MVP definido: `PHASE.md` Fase 1. Milestones: a própria lista de checkboxes da Fase 1 já
+  funciona como milestones sequenciais (auth → Java → instância → jogar → versionamento).
+- [ ] Limitações legais/licenciamento: sinalizadas em `CONTEXT.md` §Legal & Licensing, mas
+  **isso exige revisão formal (ToS reais, requisitos de registro de app), não dá pra decidir só
+  raciocinando** — continua bloqueando código de auth/CurseForge/skins.
+
+**Fase 0 encerrada** neste nível de profundidade. Os 3 itens "adiados" e a revisão legal
+continuam abertos, mas não travam o início da Fase 1.
 
 **Critério de saída da Fase 0**: arquitetura de módulos, schema do banco, fluxo de auth
 Microsoft, estratégia de armazenamento de `.mca`, e revisão legal/licenciamento documentados em

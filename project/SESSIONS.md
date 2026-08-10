@@ -137,7 +137,49 @@ nos docs, conforme pedido: "qualquer inconsistência pode me perguntar"):
 explícito do usuário ("não é pra hoje"). O trabalho de código da Fase 0 (benchmark de Git,
 `mca-bench`) continua de pé e válido, sem qualquer alteração.
 
-**Estado ao final da sessão**: `project/` reflete a visão de launcher completo (PRD v2.0,
-roadmap Fase 0-10). Próximo passo natural, quando o usuário quiser retomar código: fechar os
-itens restantes da Fase 0 (tanto os de versionamento quanto os novos de arquitetura/launcher)
-antes de começar a Fase 1.
+**Estado da sessão nesse ponto**: `project/` reflete a visão de launcher completo (PRD v2.0,
+roadmap Fase 0-10). Repositório publicado em https://github.com/masterlxz/mcgit (público),
+confirmado que o mundo de teste (`benchmarks/worlds/`) nunca foi versionado nem enviado.
+
+---
+
+### Fechamento da Fase 0 por análise (mesma sessão, orçamento de tokens curto)
+
+Usuário pediu pra fechar a Fase 0 de uma vez, sinalizando pouco orçamento de tokens restante.
+Em vez de rodar os experimentos empíricos que faltavam (Git LFS, edição de bloco real, mundo
+maior, mundo salvo pelo servidor oficial, e toda a pesquisa nova do launcher — Java, auth
+Microsoft, schema de banco, etc.), a maior parte foi **decidida por raciocínio/conhecimento já
+disponível**, sem novos testes, e registrada como decisão provisória (reabrir se a Fase 1
+mostrar erro):
+
+- Git chamado via binário do sistema (subprocess), não `git2`/libgit2.
+- Sem Git LFS no MVP — o benchmark já feito é sinal forte o suficiente.
+- `git gc` automático disparado pelo próprio mcgit, não só o auto-gc padrão.
+- Banco local: SQLite, schema proposto (`instances`, `accounts`, `worlds`, `mods`, `modpacks`,
+  `java_installations`, `backups`, `git_repositories`, `arweave_uploads`, `skins`, `settings`).
+- Gerenciamento de Java: baixar builds Eclipse Temurin/Adoptium por major version.
+- Gerenciamento de instâncias: pastas isoladas + cache global de libraries/assets compartilhado
+  (mesmo padrão de Prism Launcher/MultiMC).
+- Fluxo de autenticação Microsoft documentado em detalhe (MS OAuth → Xbox Live → XSTS →
+  Minecraft Services) — registro do app no Azure AD fica como ação prática pendente, não
+  decisão técnica.
+- Integração de modpacks: Modrinth primeiro (API mais aberta), CurseForge condicionado à
+  revisão de ToS.
+- Arquitetura multiplataforma (filesystem, Java, credenciais, empacotamento) e interfaces
+  internas (`StorageProvider`/`AuthenticationProvider` como traits Rust) esboçadas.
+
+Tudo isso foi registrado em `ARCHITECTURE.md` (novas seções: Fluxo de Autenticação Microsoft,
+Gerenciamento de Java, Gerenciamento de Instâncias, Schema do Banco Local, Interfaces Internas
+Principais, Arquitetura Multiplataforma) e no checklist da Fase 0 em `PHASE.md`.
+
+**3 itens ficaram deliberadamente adiados** (validação empírica real, não decidível só
+raciocinando, mas não-bloqueantes pra Fase 1): testar edição de bloco real (não só metadado),
+repetir o benchmark com mundo maior/mais sessões, e revalidar contra um mundo salvo pelo
+servidor Java oficial (o benchmark atual usou o writer do `fastanvil`, não o servidor real). A
+revisão legal/licenciamento (`CONTEXT.md` §Legal & Licensing) também continua aberta — essa
+exige pesquisa formal de ToS, não dá pra decidir só raciocinando, e continua bloqueando código
+de autenticação Microsoft, CurseForge e API de skins.
+
+**Estado ao final da sessão**: Fase 0 formalmente encerrada (`OVERVIEW.md`/`PHASE.md`
+atualizados). Próximo passo natural: começar a Fase 1 (MVP do launcher), ou, se surgir mais
+orçamento, fechar os 3 itens empíricos adiados e a revisão legal antes de codar.

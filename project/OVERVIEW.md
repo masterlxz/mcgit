@@ -27,7 +27,7 @@ Stack principal:
 # Status Geral
 
 ```
-Fase 0  — Pesquisa & Arquitetura                    [~] Em andamento
+Fase 0  — Pesquisa & Arquitetura                    [x] Encerrada (3 itens adiados, não-bloqueantes — ver PHASE.md)
 Fase 1  — MVP do Launcher                           [ ] Não iniciada
 Fase 2  — Qualidade do Versionamento                [ ] Não iniciada
 Fase 3  — Modloaders, Mods & Modpacks               [ ] Não iniciada
