@@ -63,3 +63,16 @@ de escopo pra launcher completo (Sessão 1, v2.0 — ver `CONTEXT.md`/`ARCHITECT
 16. Open source puro — o core nunca deixa de ser livre, mesmo que um negócio seja construído em cima no futuro.
 17. Instâncias são isoladas entre si — sem conflito entre diferentes Minecrafts/modloaders/mods instalados.
 18. Nenhum código que toque autenticação Microsoft, CurseForge ou API de skins antes da revisão legal/licenciamento da Fase 0 (ver `CONTEXT.md` §Legal & Licensing).
+
+---
+
+# Identidade Visual
+
+O usuário mantém um ecossistema de projetos onde cada um tem uma cor própria de identidade:
+Anchor é verde, TruthID é azul, Warden é roxo. **mcgit é vermelho** (decidido na Sessão 2,
+2026-08-16) — mcgit faz parte desse mesmo ecossistema.
+
+Ainda não decidido: o tom exato de vermelho (hex/paleta), nem a aplicação prática (ícone do
+app, tema da GUI Tauri/React, favicon, etc.) — isso fica pra quando o trabalho de design
+system/tema da interface começar de verdade. Por enquanto é só a cor-conceito registrada, pra
+não se perder e pra guiar decisões de design quando chegarem.
