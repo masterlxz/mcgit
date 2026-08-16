@@ -1,0 +1,3 @@
+[workspace]
+resolver = "2"
+members = ["crates/mcgit-java", "crates/mcgit-db", "apps/desktop/src-tauri"]

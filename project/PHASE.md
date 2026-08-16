@@ -75,12 +75,23 @@ novos testes. São decisões provisórias — reabrir se a Fase 1 mostrar que al
 - [x] Modelo de segurança: `CONTEXT.md` §Security Requirements.
 - [x] MVP definido: `PHASE.md` Fase 1. Milestones: a própria lista de checkboxes da Fase 1 já
   funciona como milestones sequenciais (auth → Java → instância → jogar → versionamento).
-- [ ] Limitações legais/licenciamento: sinalizadas em `CONTEXT.md` §Legal & Licensing, mas
-  **isso exige revisão formal (ToS reais, requisitos de registro de app), não dá pra decidir só
-  raciocinando** — continua bloqueando código de auth/CurseForge/skins.
+- [x] Limitações legais/licenciamento: revisão formal feita (Sessão 2, 2026-08-15) — resultado
+  completo em `CONTEXT.md` §Legal & Licensing Considerations. Resumo: (1) auth Microsoft precisa
+  de aprovação externa do escopo `XboxLive.signin` via ID@Xbox antes de testes reais de login —
+  registrado como `PENDING.md` #1, não bloqueia mais código de auth em si (o app registration
+  Azure pode ser criado a qualquer momento), só bloqueia login funcionando de ponta a ponta; (2)
+  CurseForge tem restrição de ToS mais séria do que se imaginava (proíbe cache de dados da API —
+  tensão real com local-first/offline-first) — decisão de escopo ainda em aberto, não apenas
+  aprovação de chave; (3) Modrinth confirmado sem bloqueio de ToS, só rate limit (300 req/min) e
+  `User-Agent` obrigatório; (4) skins não tem bloqueio de ToS mas o endpoint não é documentado
+  oficialmente e tem rate limit apertado (~20 req/min) com risco de suspensão de conta —
+  requisito de engenharia (backoff), não legal; (5) nome "mcgit" já está em conformidade com as
+  diretrizes de marca da Mojang, sem necessidade de renomear.
 
-**Fase 0 encerrada** neste nível de profundidade. Os 3 itens "adiados" e a revisão legal
-continuam abertos, mas não travam o início da Fase 1.
+**Fase 0 encerrada** neste nível de profundidade. Os 3 itens empíricos "adiados" continuam
+abertos, mas não travam o início da Fase 1. A revisão legal está formalmente feita; só
+`PENDING.md` #1 (aprovação externa da Microsoft) e a decisão de escopo do CurseForge continuam
+pendentes como itens de acompanhamento, não como bloqueio de pesquisa.
 
 **Critério de saída da Fase 0**: arquitetura de módulos, schema do banco, fluxo de auth
 Microsoft, estratégia de armazenamento de `.mca`, e revisão legal/licenciamento documentados em
@@ -96,7 +107,14 @@ em paralelo, opcional. Absorve o que era "Fase 1 — MVP local" do mcgit-ferrame
 
 - [ ] Login com conta Microsoft (OAuth, sem armazenar senha)
 - [ ] Instalação de Minecraft Vanilla (download de version manifest, libraries, natives)
-- [ ] Gerenciamento de Java (detectar versão necessária, instalar automaticamente se ausente)
+- [x] Gerenciamento de Java — Java Manager implementado (Sessão 2, 2026-08-16): detecção de
+  instalações no sistema, listagem de versões LTS via API do Adoptium, download+verificação de
+  checksum+extração+instalação, seleção de padrão, e adição manual (usuário avançado) — tudo
+  testado de ponta a ponta pela GUI real (Tauri+React), com persistência confirmada via SQLite
+  (sobrevive a fechar/reabrir o app). Detalhes: `ARCHITECTURE.md` §Java Manager (implementado).
+  Falta pra fechar o item por completo: detectar automaticamente a versão *necessária* a partir
+  do manifesto de uma instância específica — não dá pra fazer isso ainda porque "instância" não
+  existe como conceito no código (só o Java Manager isolado, por decisão de escopo da sessão).
 - [ ] Criar instância (isolada: Minecraft, config, saves, logs próprios)
 - [ ] Iniciar o Minecraft a partir de uma instância (Game Runner multiplataforma)
 - [ ] Gerenciar mundos dentro de uma instância (listar, abrir pasta, etc.)

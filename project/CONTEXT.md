@@ -368,22 +368,76 @@ layout.
 
 This is a Fase 0 research item, not a decision — listed here so it isn't silently skipped:
 
-* **Microsoft/Mojang requirements for third-party launchers**: using Microsoft OAuth to
-  authenticate Minecraft ownership has specific technical and usage requirements set by
-  Microsoft/Mojang. Must be reviewed before any auth code is written.
-* **CurseForge API terms of service**: historically more restrictive than Modrinth's about
-  third-party redistribution and API usage (API key approval process, usage limits, attribution
-  requirements). Modrinth's API/ToS is comparatively open. This may affect *whether* and *how*
+* **Microsoft/Mojang requirements for third-party launchers — researched (Sessão 2,
+  2026-08-15)**: the OAuth flow itself (MS OAuth → Xbox Live → XSTS → Minecraft Services) is
+  correct as already documented in `ARCHITECTURE.md`, but the `XboxLive.signin` OAuth scope
+  required to authenticate against Xbox Live is **restricted** — a normal Azure app registration
+  does not get it automatically (attempting to use it returns a 403 "Invalid app registration").
+  Getting access requires formal enrollment in the **Xbox Developer Program via ID@Xbox** (the
+  independent/small-developer track) — the same path open-source launchers like Prism Launcher
+  and MultiMC had to go through; no alternative payment path for hobbyist projects was found.
+  This is a two-step, not one-step, action: (1) create the Azure app registration itself —
+  doable any time, no approval needed — and (2) separately request `XboxLive.signin` access via
+  ID@Xbox, which involves human review and unknown turnaround time. Tracked as **`PENDING.md`
+  #1** since it's an external dependency outside our control that can block real login testing
+  before Fase 1 code is otherwise ready for it. Sources: [Microsoft Q&A — XboxLive.signin
+  permission](https://learn.microsoft.com/en-gb/answers/questions/5768276/how-to-get-xboxlive-signin-permission-for-azure-ap),
+  [HeliosLauncher MicrosoftAuth.md](https://github.com/dscalzi/HeliosLauncher/blob/master/docs/MicrosoftAuth.md).
+* **CurseForge API terms of service — researched (Sessão 2, 2026-08-15)**: worse than "pending
+  ToS approval" implied. Two hard restrictions in the actual 3rd Party API Terms and Conditions:
+  (1) **forbids saving or caching any data obtained through the API** — in direct tension with
+  mcgit's local-first/offline-first principles (`GUIDELINES.md` #6/#7), since a launcher
+  normally caches mod/modpack metadata locally to work offline and avoid hammering the API; (2)
+  **forbids competing, directly or indirectly, with CurseForge/the Platform** — vague enough to
+  create real classification risk for a generic launcher. API key approval is not automatic: a
+  form + human review by Overwolf, judged on author-earnings impact, infrastructure load, and
+  author consent for outside-CurseForge distribution. Historical precedent: when CurseForge
+  launched its official API in May 2022, it *removed* modpack-download capability that launchers
+  like MultiMC and PCL2 previously had — the rules have already broken existing launchers once.
+  **Open decision, not yet made**: whether CurseForge support becomes fully secondary/optional to
+  Modrinth (see below), or whether a no-cache-compliant integration mode is worth building.
+  Sources: [CurseForge 3rd Party API Terms and
+  Conditions](https://support.curseforge.com/support/solutions/articles/9000207405-curse-forge-3rd-party-api-terms-and-conditions),
+  [About the CurseForge API and How to Apply for a
+  Key](https://support.curseforge.com/support/solutions/articles/9000208346-about-the-curseforge-api-and-how-to-apply-for-a-key).
+  Modrinth's API/ToS is comparatively open — see next item. This may affect *whether* and *how*
   CurseForge integration ships, not just *when*.
+* **Modrinth API — researched (Sessão 2, 2026-08-15)**: open API, no caching/competition
+  restrictions (contrast with CurseForge above). Rate limit 300 req/min regardless of token.
+  Only real requirement is a uniquely-identifying `User-Agent` header (contact info recommended,
+  not required — helps Modrinth warn before blocking instead of just blocking). Other launchers
+  (ATLauncher, GDLauncher) have hit 429s exporting large instances — design the mcgit HTTP
+  client with pagination/backoff from the start, not as a later optimization. No ToS blocker for
+  Modrinth-first, confirming the existing decision. Source: [Modrinth API
+  docs](https://docs.modrinth.com/api/).
 * **Mod/modpack redistribution**: mods and modpacks are third-party copyrighted content;
   installing them via API (pointing at the source, not rehosting) is the safe default pattern
   used by other launchers — must not assume rehosting is fine without checking each platform's
   terms.
-* **Skins API usage**: must go through official Mojang/Microsoft APIs and respect their rules —
-  no scraping, no unauthorized storage.
+* **Skins API usage — researched (Sessão 2, 2026-08-15)**: must go through official
+  Mojang/Microsoft APIs and respect their rules — no scraping, no unauthorized storage. Note:
+  this API (`POST https://api.minecraftservices.com/minecraft/profile/skins`) is **not
+  officially documented** by Mojang/Microsoft — it's the same endpoint the official launcher
+  uses internally, but public documentation is community reverse-engineering (wiki.vg and
+  similar), not a published contract. Accepts `multipart/form-data` (file upload) or
+  `application/json` (skin URL), bearer-token auth (same token as the rest of the Minecraft
+  Services flow). Rate limit is tight — **~20 req/min** — and repeated 429s (e.g. from retrying
+  without backoff) can lead to **temporary account suspension**, not just a UI error. Doesn't
+  block code the way CurseForge's explicit ToS does, but demands client-side rate limiting and
+  backoff-on-retry from the first commit that touches it. Sources: [Mojang API —
+  wiki.vg](https://wiki.vg/Mojang_API), [Mojang API — Minecraft
+  Wiki](https://minecraft.wiki/w/Mojang_API).
+
+* **Naming/branding — researched (Sessão 2, 2026-08-15)**: Mojang's Usage Guidelines say
+  "Minecraft" cannot be the first word or the dominant part of a third-party product's name.
+  **"mcgit" already complies** — no rename needed. Domain names may include a Minecraft brand
+  term as long as they don't look official. Source: [Minecraft Usage
+  Guidelines](https://www.minecraft.net/en-us/usage-guidelines).
 
 None of this blocks Fase 0 research or documentation work, but it does block writing any code
-that touches Microsoft auth, CurseForge, or skin APIs until reviewed.
+that touches Microsoft auth or CurseForge until reviewed (see `PENDING.md` #1 for the Microsoft
+auth action item). Skins and Modrinth code are not ToS-blocked, but must follow the rate-limiting
+notes above from the first implementation.
 
 ---
 

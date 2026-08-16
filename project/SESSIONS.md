@@ -183,3 +183,109 @@ de autenticação Microsoft, CurseForge e API de skins.
 **Estado ao final da sessão**: Fase 0 formalmente encerrada (`OVERVIEW.md`/`PHASE.md`
 atualizados). Próximo passo natural: começar a Fase 1 (MVP do launcher), ou, se surgir mais
 orçamento, fechar os 3 itens empíricos adiados e a revisão legal antes de codar.
+
+---
+
+## Sessão 2 — 2026-08-15
+
+**Contexto**: retomada da Fase 0. Perguntado ao usuário por onde seguir (Fase 1, os 3 itens
+empíricos adiados, ou a revisão legal/licenciamento); escolhida a **revisão legal/licenciamento**.
+
+**O que foi feito**: pesquisa real via web (não só raciocínio, já que essa era justamente a
+ressalva que mantinha o item aberto) nas 4 áreas sinalizadas em `CONTEXT.md` §Legal &
+Licensing, apresentadas ao usuário uma de cada vez (modo ensino) com confirmação entre elas:
+
+1. **Auth Microsoft/Xbox**: o fluxo OAuth já documentado está correto, mas o escopo
+   `XboxLive.signin` é restrito — exige inscrição no Xbox Developer Program via **ID@Xbox**
+   (mesmo caminho que Prism Launcher/MultiMC percorreram), não é liberado automaticamente pra
+   qualquer app registration. Virou **`PENDING.md` #1**: ação prática de duas etapas (criar o
+   app registration a qualquer momento; solicitar o escopo via ID@Xbox cedo, já que tem revisão
+   humana e prazo desconhecido).
+2. **CurseForge**: pior do que "aguardando aprovação de ToS" sugeria. Os termos reais proíbem
+   **cachear qualquer dado obtido via API** (tensão direta com os princípios local-first/
+   offline-first do projeto) e proíbem competir direta/indiretamente com a plataforma. Chave de
+   API exige formulário + revisão humana da Overwolf (critérios: impacto na receita de autores,
+   carga de infra, consentimento de autores). Precedente: em mai/2022 o CurseForge tirou a
+   capacidade de baixar modpacks de launchers existentes (MultiMC, PCL2) ao lançar a API
+   oficial. Decisão de escopo (CurseForge secundário/opcional vs. modo compatível sem cache)
+   ficou em aberto, não resolvida nesta sessão.
+3. **Modrinth**: confirmado sem bloqueio de ToS — API aberta, sem cláusula de cache/competição,
+   rate limit 300 req/min, exige `User-Agent` identificável. Reforça a decisão já tomada de
+   "Modrinth primeiro".
+4. **API de skins**: sem bloqueio de ToS, mas o endpoint (`api.minecraftservices.com/.../skins`)
+   não é documentado oficialmente (só engenharia reversa da comunidade), rate limit apertado
+   (~20 req/min), e excesso de 429 pode gerar **suspensão temporária da conta** do jogador —
+   vira requisito de engenharia (backoff agressivo), não bloqueio legal.
+5. **Bônus (naming/branding)**: diretrizes de marca da Mojang proíbem "Minecraft" como palavra
+   dominante do nome de um produto de terceiros — **"mcgit" já está em conformidade**, sem
+   necessidade de renomear.
+
+Todos os achados registrados em `CONTEXT.md` §Legal & Licensing Considerations (cada bullet
+expandido com "researched (Sessão 2, 2026-08-15)" + fontes), `PENDING.md` (item #1 criado), e
+`PHASE.md` (checklist da Fase 0 — item de limitações legais marcado `[x]` com resumo).
+
+**Estado ao final da sessão**: revisão legal/licenciamento formalmente concluída. Únicos itens
+de acompanhamento remanescentes: `PENDING.md` #1 (aprovação externa Microsoft/ID@Xbox — ação
+externa, não decisão técnica) e a decisão de escopo do CurseForge (ainda em aberto). Os 3 itens
+empíricos adiados da Fase 0 (edição de bloco real, benchmark com mundo maior, revalidação contra
+mundo do servidor oficial) continuam intocados. Próximo passo natural: começar a Fase 1 (MVP do
+launcher).
+
+---
+
+## Sessão 2 (continuação) — 2026-08-16 — Fase 1: Java Manager (primeiro código do launcher)
+
+**Contexto**: usuário pediu pra começar a Fase 1 pelo Java Manager — "tela pra baixar Java de
+forma simples, selecionar qual é o padrão e tudo mais". Recorte de escopo discutido antes de
+codar: só o Java Manager isolado (sem "instância", que ainda não existe como conceito em
+código). Entrei em modo plano (`/plan`), lancei um agente de design com contexto completo da
+arquitetura já travada, e confirmei ao vivo (fetch real) o contrato da API do Adoptium antes de
+escrever o plano — evitando planejar em cima de suposição. Plano aprovado com 10 incrementos
+pequenos, cada um com comando de verificação e checkpoint de ensino (modo ensino continua ativo
+— ver `GUIDELINES.md`).
+
+**O que foi feito** (primeira vez que o repositório tem código de produto de verdade):
+
+- **Workspace Rust criado**: `Cargo.toml` raiz + `crates/mcgit-java` (biblioteca pura, sem
+  Tauri/SQLite) + `crates/mcgit-db` (acesso a SQLite via `rusqlite`, feature `bundled`) +
+  `apps/desktop` (Tauri 2 + React/TS, scaffolded via `npm create tauri-app@latest`, renomeado
+  de `appsdesktop` pro `mcgit-desktop`/`mcgit`).
+- **`mcgit-java`**: detecção de Java no sistema (`platform::linux` — Windows/macOS ficam atrás
+  de `#[cfg(target_os)]` sem corpo ainda, próximo passo natural quando alguém rodar nessas
+  plataformas), parser de `java -version` (cobre Temurin/Oracle/Corretto/OpenJDK genérico, dois
+  esquemas de versão), cliente da API do Adoptium (`available_releases`/`latest_asset`,
+  confirmado contra a API real), e instalação completa (download em streaming, verificação de
+  checksum sha256 antes de extrair, extração por SO via `#[cfg]` — `tar`+`flate2` em
+  Linux/macOS, `zip` no Windows — localização do binário na árvore extraída).
+- **`mcgit-db`**: schema `java_installations` estendido (`source`, `is_default` com índice único
+  parcial garantindo "só um padrão" no nível do banco, não da aplicação) + CRUD completo, 100%
+  testado com banco em memória.
+- **`apps/desktop`**: `AppState` (`Mutex<Db>` + diretório de Java gerenciado, resolvido via
+  `directories::ProjectDirs`, nunca caminho fixo), 6 comandos Tauri conectando `mcgit-java` +
+  `mcgit-db` (único ponto de acoplamento, como a arquitetura exige), tela React funcional
+  (`JavaManagerScreen` + 4 componentes) consumindo os comandos via `invoke()`/`listen()`.
+- **Testado de ponta a ponta pela GUI real**: `npm install` + `cargo tauri dev` abriram uma
+  janela de verdade neste ambiente (sandbox tinha os requisitos: `webkit2gtk-4.1`,
+  `DISPLAY`/`WAYLAND_DISPLAY`) — usuário confirmou visualmente cada etapa. Um JDK 25 real foi
+  baixado, verificado, extraído e instalado clicando em "Install" na tela; marcado como padrão
+  clicando em "Set as default"; fechado o app e reaberto, a lista carregou já com o Java 25
+  marcado como padrão — prova de que veio do SQLite (`~/.local/share/mcgit/mcgit.sqlite3`), não
+  de estado em memória do React. Binário conferido rodando `java -version` de verdade fora do
+  app também.
+- Dois imprevistos de dependências resolvidos durante a implementação (cache do índice do
+  crates.io desatualizado pra `futures-util`/sub-dependências recém-publicadas; mudança de API
+  do `sha2` 0.11 exigindo laço manual de leitura em vez de `std::io::copy`/`format!("{:x}", ...)`)
+  — nenhum dos dois é decisão de arquitetura, só ajuste de implementação.
+- `ARCHITECTURE.md` atualizado: seção "Java Manager — implementado" nova, schema do banco
+  estendido documentado, workspace confirmado em parte, decisão `rusqlite` vs `sqlx` registrada,
+  e uma seção nova "Débitos Técnicos de Arquitetura" com 4 itens conscientes (plataformas
+  faltando, extração bloqueante dentro de `async fn`, eventos de progresso sem throttle, Mutex
+  sem `spawn_blocking`) — nenhum bloqueou o funcionamento real, mas ficam registrados pra não
+  parecerem descuido depois. `PHASE.md` (Fase 1): item "Gerenciamento de Java" marcado `[x]`,
+  com nota de que falta a parte de detectar a versão *necessária* por instância (bloqueado por
+  "instância" não existir ainda em código, não por decisão técnica).
+
+**Estado ao final da sessão**: Java Manager funcionando de ponta a ponta, testado na GUI real
+por download de um JDK de verdade. Próximo passo natural: continuar a Fase 1 — instância,
+Minecraft Vanilla, ou autenticação Microsoft (essa última ainda esperando a aprovação externa do
+`PENDING.md` #1).

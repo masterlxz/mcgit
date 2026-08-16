@@ -38,8 +38,9 @@ StorageProvider                    AuthenticationProvider
 └── ArweaveStorage     (Fase 7)
 ```
 
-**Proposta inicial de workspace Rust** (a confirmar/ajustar na Fase 0, ao desenhar as
-interfaces reais entre módulos):
+**Proposta inicial de workspace Rust** (confirmada em parte na prática — `mcgit-java`,
+`mcgit-db` e `apps/desktop` existem e compilam desde a Sessão 2, 2026-08-16; os demais crates
+abaixo continuam só planejados, sem código ainda):
 
 ```text
 mcgit/
@@ -71,6 +72,8 @@ mcgit/
 | Compactação do repositório (`git gc`) | Depender do auto-gc padrão do Git vs o mcgit disparar `git gc`/repack periodicamente por conta própria | **mcgit dispara `git gc` por conta própria** ✓ (decidido, Sessão 1) — sem compactar, o `.git` cresce ~5.3M por snapshot mesmo mudando só 2-3 chunks de 960; com `git gc --aggressive`, 7 snapshots ficaram do tamanho de ~1 |
 | Merge entre branches de mundo | Merge tradicional do Git vs não suportar merge (só criar/descartar branch) | **Em aberto** — não assumir que merge tradicional é seguro para arquivos de mundo |
 | Banco de dados local | SQLite vs outra opção | **SQLite** ✓ (decidido por análise, Sessão 1) — guarda só metadados, nunca o conteúdo dos arquivos do mundo (isso continua sendo Git + filesystem). Schema proposto: §Schema do Banco Local |
+| Biblioteca de acesso ao SQLite | `rusqlite` (síncrona) vs `sqlx` (assíncrona) vs `sea-orm` (ORM assíncrono) | **`rusqlite`, feature `bundled`** ✓ (decidido na implementação, Sessão 2) — app desktop de usuário único, sem necessidade de pool assíncrono; API parecida com o módulo `sqlite3` cru do Python. Chamadas de DB ficam dentro de `Mutex<Db>`, travadas direto nas funções `async` dos comandos Tauri (sem `spawn_blocking` — aceitável pra consultas locais rápidas, ver §Débitos Técnicos). `sea-orm` (usado pelo usuário em outro projeto) considerado e adiado — schema de hoje é uma tabela só |
+| Migração de schema do SQLite | Arquivo único idempotente (`schema.sql` + `CREATE TABLE IF NOT EXISTS`) vs migrations versionadas vs ORM completo (`sea-orm`) | **Adiado por decisão, gatilho definido (Sessão 2)**: o `schema.sql` único serve enquanto só *adicionamos* tabelas/colunas novas, mas não aguenta bem *alterar* algo (renomear coluna, mudar tipo) num banco com dados reais de usuário — o schema completo do PRD tem ~10 tabelas (`instances`, `accounts`, `worlds`, `mods`, `modpacks`, `backups`, `git_repositories`, `arweave_uploads`, `skins`, `settings`), então isso vai virar problema real, não hipotético. **Gatilho concreto**: na próxima tabela nova que for adicionada, trocar `schema.sql` único por migrations versionadas via `rusqlite_migration` (lista ordenada de migrations SQL + versão trackeada no banco via `PRAGMA user_version`) — resolve manutenção/legibilidade sem sair do SQL cru nem adotar um ORM inteiro. `sea-orm` continua op­ção legítima mais pra frente, se as relações entre tabelas ficarem complexas o suficiente pra valer um query builder tipado — não é a solução do problema de migração em si |
 | Gerenciamento de Java | Baixar/gerenciar builds próprias vs delegar pra lib existente | **Baixar builds Eclipse Temurin/Adoptium** ✓ (decidido por análise, Sessão 1) — ver §Gerenciamento de Java |
 | Integração de modpacks | Modrinth API vs CurseForge API vs ambas desde o início | **Modrinth primeiro** ✓ (decidido por análise, Sessão 1) — API mais aberta; CurseForge condicionado à revisão de ToS (§Legal & Licenciamento) |
 | Fluxo de autenticação Microsoft | Detalhes exatos do OAuth | **Cadeia MS OAuth → Xbox Live → XSTS → Minecraft Services** ✓ (decidido por análise, Sessão 1) — ver §Fluxo de Autenticação Microsoft. Registro do app no Azure AD é ação prática pendente, não decisão técnica |
@@ -108,7 +111,8 @@ texto puro no SQLite — ver `CONTEXT.md` §Security Requirements).
 ## Gerenciamento de Java
 
 - Detectar a versão necessária a partir do manifesto de versão do Minecraft (Mojang informa
-  isso por versão no próprio piston-meta).
+  isso por versão no próprio piston-meta). **Ainda não implementado** — depende do conceito de
+  instância, que não existe em código ainda (ver abaixo).
 - Nunca depender só do "Java do sistema" — instâncias diferentes podem precisar de versões
   diferentes ao mesmo tempo (Java 17 pra 1.20.x, Java 21 pra 1.21.x).
 - Baixar builds do **Eclipse Temurin/Adoptium** (OpenJDK redistribuível, sem os requisitos de
@@ -116,6 +120,45 @@ texto puro no SQLite — ver `CONTEXT.md` §Security Requirements).
 - Guardar cada versão baixada numa pasta própria do mcgit, uma por major version, reaproveitada
   entre instâncias que precisam da mesma versão.
 - Permitir apontar pra um Java já instalado manualmente, pro usuário avançado.
+
+### Java Manager — implementado (Sessão 2, 2026-08-16)
+
+Primeiro código de produto do projeto. Crate `crates/mcgit-java` (biblioteca pura, sem Tauri nem
+SQLite como dependência) + app `apps/desktop` (Tauri 2 + React/TS, scaffolded via
+`npm create tauri-app@latest`) conectados por `crates/mcgit-db`. Testado de ponta a ponta pela
+GUI real: scan do sistema → listar LTS do Adoptium → baixar+verificar+extrair+instalar → marcar
+padrão → persistência confirmada reabrindo o app.
+
+- **Detecção** (`mcgit-java::detect`): varre locais por plataforma (`platform::linux` — só
+  Linux implementado até agora, `windows`/`macos` ficam atrás de `#[cfg(target_os)]` mas sem
+  corpo ainda, pra implementar/testar quando alguém rodar numa dessas plataformas) + `PATH`,
+  resolve o binário real (arquivo direto ou `<candidato>/bin/java`), roda `java -version` e
+  faz o parse da saída (`version_parse` — cobre Temurin/Oracle/Corretto/OpenJDK genérico e os
+  dois esquemas de versão, antigo `1.8.0_x` e novo `21.x.x`).
+- **API do Adoptium** (`mcgit-java::adoptium`): `GET /v3/info/available_releases` (lista de LTS)
+  e `GET /v3/assets/latest/{feature_version}/hotspot?image_type=jdk&os=...&architecture=...`
+  (asset mais recente) — contrato confirmado ao vivo, ver `CONTEXT.md` §Legal & Licensing pro
+  histórico da pesquisa original. Mapeamento de nomenclatura: `macos`→`mac`, `x86_64`→`x64`.
+- **Instalação** (`mcgit-java::install` + `archive`): download em streaming (`reqwest`, sem
+  carregar o arquivo inteiro na memória) → verificação de checksum sha256 (antes de extrair,
+  nunca depois) → extração por SO (`tar`+`flate2` em Linux/macOS, `zip` no Windows, cada um só
+  compilado na plataforma certa via `#[cfg]`) → localização do binário na árvore extraída (busca
+  limitada, já que o nome da pasta-raiz varia por versão, ex. `jdk-21.0.12+8`).
+- **Persistência** (`mcgit-db`): tabela `java_installations` estendida (ver §Schema do Banco
+  Local abaixo) via `rusqlite` (feature `bundled`, sem dependência de SQLite do sistema).
+- **Ponte Tauri** (`apps/desktop/src-tauri/src/commands/java.rs`): único lugar onde
+  `mcgit-java` e `mcgit-db` se conectam, como a arquitetura exige — 6 comandos
+  (`scan_system_java`, `list_java_installations`, `list_installable_java_versions`,
+  `install_java`, `add_manual_java`, `set_default_java`) + evento `java://install-progress`.
+
+**Simplificações conscientes, registradas como débito técnico leve** (ver §Débitos Técnicos):
+o `Mutex<Db>` é travado direto dentro das funções `async` dos comandos (sem `spawn_blocking`),
+aceitável pra consultas SQLite locais rápidas; a extração de arquivo dentro de
+`install::download_and_install` roda de forma síncrona/bloqueante mesmo estando dentro de uma
+`async fn` (alguns segundos de stall no executor durante a extração, imperceptível numa UI que já
+mostra barra de progresso, mas não é o "jeito mais puro" de fazer); os eventos de progresso de
+download não têm throttle (chunks de rede pequenos geram milhares de eventos por instalação) —
+não travou nada até agora, mas vale revisar se afetar performance da UI real.
 
 ---
 
@@ -146,7 +189,7 @@ accounts(id, ms_account_id, minecraft_uuid, username, refresh_token_ref, last_lo
 worlds(id, instance_id, name, path, git_enabled, created_at)
 mods(id, instance_id, source, project_id, version_id, filename, enabled)
 modpacks(id, source, project_id, version_id, installed_at)
-java_installations(id, major_version, vendor, path)
+java_installations(id, major_version, vendor, path, source, is_default, created_at)
 backups(id, world_id, target, created_at, size_bytes)
 git_repositories(id, world_id, path)
 arweave_uploads(id, world_id, snapshot_commit_hash, tx_id, uploaded_at, cost_estimate)
@@ -157,6 +200,15 @@ settings(key, value)
 `refresh_token_ref` é uma referência ao keyring do SO, não o token em si — a tabela nunca guarda
 segredo em texto puro. Conteúdo de mundo/mods nunca entra no banco, só metadados; os arquivos
 ficam no filesystem (e, pra mundos versionados, dentro do próprio `.git`).
+
+**`java_installations` implementada e estendida** (Sessão 2, 2026-08-16 — a única tabela com
+código real até agora): ganhou `source` (`'managed'|'detected'|'manual'` — necessário porque
+detecção, download e entrada manual escrevem na mesma tabela e não podem se confundir) e
+`is_default` (boolean), com **unicidade de "só um padrão" garantida por um índice único parcial
+do SQLite** (`CREATE UNIQUE INDEX ... WHERE is_default = 1`), não por disciplina da aplicação.
+`path` é `UNIQUE` e é a chave de dedup entre os três fluxos (`INSERT ... ON CONFLICT(path) DO
+UPDATE ...`). Acesso via `rusqlite` (feature `bundled`) — decisão registrada na tabela de
+Decisões de Arquitetura abaixo.
 
 ---
 
@@ -208,8 +260,26 @@ Fase 0.
 
 ## Débitos Técnicos de Arquitetura
 
-Nenhum ainda — projeto em Fase 0, sem código de produto escrito (o benchmark abaixo é
-ferramenta de pesquisa descartável, não código do launcher).
+Registrados a partir da implementação do Java Manager (Sessão 2, 2026-08-16 — primeiro código
+de produto do projeto; o benchmark de Git da Fase 0 era ferramenta de pesquisa descartável, não
+conta aqui):
+
+- **`platform::windows`/`platform::macos` não implementados** — só `platform::linux` existe;
+  os outros dois ficam atrás de `#[cfg(target_os)]` sem corpo. Não bloqueia nada no Linux (o
+  compilador nem tenta compilá-los), mas precisa ser feito antes de rodar em Windows/macOS.
+- **Extração de arquivo bloqueia dentro de uma `async fn`** — `install::download_and_install`
+  roda a extração (`tar`/`zip`) de forma síncrona mesmo estando numa função `async`, sem
+  `spawn_blocking`. Pode travar o executor do Tokio por alguns segundos numa instalação grande.
+  Não gerou problema observado até agora (a UI já mostra barra de progresso, então uns segundos
+  de "Extracting" parado não chama atenção), mas é candidato a revisão se a experiência real
+  mostrar travamento perceptível de outras telas enquanto uma instalação roda.
+- **Eventos de progresso de download sem throttle** — chunks de rede pequenos (observado: 1-16KB
+  por chunk num download de ~200MB) geram milhares de eventos `java://install-progress` por
+  instalação. Funcionou sem problema no teste real, mas não tem limite de taxa — se a UI ficar
+  pesada com isso, precisa agrupar por tempo (ex.: só emitir a cada 100ms) ou por percentual.
+- **`Mutex<Db>` travado direto nas funções `async` dos comandos Tauri, sem `spawn_blocking`** —
+  ver a linha correspondente na tabela de Decisões de Arquitetura. Aceitável pra SQLite local
+  rápido; documentado aqui só pra não parecer descuido se alguém notar depois.
 
 ---
 
