@@ -1,8 +1,9 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-use mcgit_db::java as db_java;
-use mcgit_db::models::{JavaInstallation, JavaSource, NewJavaInstallation};
+use mcgit_db::entities::java_installation::{JavaSource, Model as JavaInstallationRow};
+use mcgit_db::java::{self as db_java, NewJavaInstallation};
+use mcgit_db::Db;
 use mcgit_java::types::InstallStage;
 use mcgit_java::{adoptium, detect, install};
 
@@ -18,11 +19,11 @@ pub struct JavaInstallationDto {
     pub is_default: bool,
 }
 
-impl From<JavaInstallation> for JavaInstallationDto {
-    fn from(row: JavaInstallation) -> Self {
+impl From<JavaInstallationRow> for JavaInstallationDto {
+    fn from(row: JavaInstallationRow) -> Self {
         Self {
             id: row.id,
-            major_version: row.major_version,
+            major_version: row.major_version as u32,
             vendor: row.vendor,
             path: row.path,
             source: row.source.as_str().to_string(),
@@ -51,18 +52,19 @@ pub async fn scan_system_java(
         .await
         .map_err(|e| e.to_string())?;
 
-    let db = state.db.lock().map_err(|e| e.to_string())?;
     for installation in found {
         let new = NewJavaInstallation {
-            major_version: installation.major_version,
+            major_version: installation.major_version as i32,
             vendor: installation.vendor,
             path: installation.path.to_string_lossy().to_string(),
             source: JavaSource::Detected,
         };
-        db_java::upsert_by_path(&db, &new).map_err(|e| e.to_string())?;
+        db_java::upsert_by_path(&state.db, new)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
-    list_from_db(&db)
+    list_from_db(&state.db).await
 }
 
 /// Pure database read — what the screen loads on mount.
@@ -70,8 +72,7 @@ pub async fn scan_system_java(
 pub async fn list_java_installations(
     state: State<'_, AppState>,
 ) -> Result<Vec<JavaInstallationDto>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    list_from_db(&db)
+    list_from_db(&state.db).await
 }
 
 /// LTS major versions available to install, from the Adoptium API.
@@ -128,14 +129,15 @@ pub async fn install_java(
     .await
     .map_err(|e| e.to_string())?;
 
-    let db = state.db.lock().map_err(|e| e.to_string())?;
     let new = NewJavaInstallation {
-        major_version: installed.major_version,
+        major_version: installed.major_version as i32,
         vendor: installed.vendor,
         path: installed.path.to_string_lossy().to_string(),
         source: JavaSource::Managed,
     };
-    let row = db_java::upsert_by_path(&db, &new).map_err(|e| e.to_string())?;
+    let row = db_java::upsert_by_path(&state.db, new)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(row.into())
 }
@@ -153,26 +155,29 @@ pub async fn add_manual_java(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("{path} does not look like a valid Java installation"))?;
 
-    let db = state.db.lock().map_err(|e| e.to_string())?;
     let new = NewJavaInstallation {
-        major_version: detected.major_version,
+        major_version: detected.major_version as i32,
         vendor: detected.vendor,
         path: detected.path.to_string_lossy().to_string(),
         source: JavaSource::Manual,
     };
-    let row = db_java::upsert_by_path(&db, &new).map_err(|e| e.to_string())?;
+    let row = db_java::upsert_by_path(&state.db, new)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(row.into())
 }
 
 #[tauri::command]
 pub async fn set_default_java(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    db_java::set_default(&db, id).map_err(|e| e.to_string())
+    db_java::set_default(&state.db, id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
-fn list_from_db(db: &mcgit_db::Db) -> Result<Vec<JavaInstallationDto>, String> {
+async fn list_from_db(db: &Db) -> Result<Vec<JavaInstallationDto>, String> {
     db_java::list_all(db)
+        .await
         .map(|rows| rows.into_iter().map(JavaInstallationDto::from).collect())
         .map_err(|e| e.to_string())
 }

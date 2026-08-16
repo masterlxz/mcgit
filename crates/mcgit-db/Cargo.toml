@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-rusqlite = { version = "0.40.2", features = ["bundled"] }
+async-trait = "0.1.92"
+sea-orm = { version = "2.0", default-features = false, features = ["macros", "sqlx-sqlite", "runtime-tokio-rustls"] }
+sea-orm-migration = { version = "2.0", default-features = false, features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
 thiserror = "2.0.20"
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

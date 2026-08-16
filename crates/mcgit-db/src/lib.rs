@@ -1,5 +1,6 @@
 mod connection;
+pub mod entities;
 pub mod java;
-pub mod models;
+mod migrations;
 
 pub use connection::{Db, DbError};

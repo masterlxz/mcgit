@@ -289,3 +289,78 @@ pequenos, cada um com comando de verificação e checkpoint de ensino (modo ensi
 por download de um JDK de verdade. Próximo passo natural: continuar a Fase 1 — instância,
 Minecraft Vanilla, ou autenticação Microsoft (essa última ainda esperando a aprovação externa do
 `PENDING.md` #1).
+
+---
+
+## Sessão 2 (continuação) — 2026-08-16 — Migração de `mcgit-db` pra SeaORM
+
+**Contexto**: ao planejar a próxima peça da Fase 1 (Instância + instalação do Vanilla), o modo
+plano foi usado de novo — um agente de design pesquisou e confirmou ao vivo o contrato da API
+`piston-meta` da Mojang (incluindo `javaVersion.majorVersion`, que fecha o item que estava
+bloqueado por falta de instância) e devolveu um plano detalhado pra `crates/mcgit-minecraft` +
+`crates/mcgit-instance` + comandos Tauri + tela React. Antes de aprovar esse plano, ao revisar a
+tabela `instances` nova, o gatilho de migração já registrado em `ARCHITECTURE.md` ("na próxima
+tabela nova, trocar `schema.sql` único por `rusqlite_migration`") foi puxado — e o usuário, em
+vez do meio-termo, perguntou diretamente "não acha que faz mais sentido já usar o ORM?"
+(referindo-se ao SeaORM, que ele já usa em outro projeto do mesmo ecossistema). Raciocínio
+aceito: com ~10 tabelas planejadas no PRD completo, trocar de fundação agora (2 tabelas) é mais
+barato que trocar depois (10 tabelas de SQL cru). Decisão confirmada explicitamente.
+
+**Escopo desta sessão, replanejado**: só a migração da fundação (`mcgit-db` inteiro pra SeaORM,
+reaplicando `java_installations` como migration 1) — a feature de Instância + Vanilla install já
+desenhada fica pra uma sessão seguinte, construída em cima dessa fundação nova. Plano anterior
+(Java Manager) sobrescrito no arquivo de plano, já que era tarefa diferente.
+
+**O que foi feito**:
+
+- `crates/mcgit-db` reescrito por completo: `rusqlite` saiu, `sea-orm`+`sea-orm-migration` 2.0
+  entraram (dependências verificadas via `cargo add --dry-run` antes de travar no plano — mesma
+  disciplina de "confirmar ao vivo antes de assumir" usada pra APIs externas). Entidade
+  `java_installations` via `#[derive(DeriveEntityModel)]`; `JavaSource` virou um enum tipado via
+  `DeriveActiveEnum` (string desconhecida no banco agora é erro real, não mais um fallback
+  silencioso pra "detected" como no código à mão). `models.rs` (structs escritas manualmente)
+  foi removido — a entidade gerada já é o tipo de retorno direto do CRUD.
+- Primeira migration real do projeto (`m20260816_000001_create_java_installations.rs`),
+  reaplicando exatamente o schema que já estava testado — escrita como SQL cru dentro da
+  migration (`execute_unprepared`) de propósito, porque o construtor de schema do SeaORM não
+  cobre bem valor-padrão-por-função (`datetime('now')`) nem índice único parcial
+  (`WHERE is_default = 1`) — usar o escape hatch documentado em vez de forçar esses dois casos
+  numa API pensada pro caso comum.
+- `Db::open`/`open_in_memory` viraram `async` (efeito cascata: testes de `mcgit-db` viraram
+  `#[tokio::test]`, mesmo padrão já usado nos testes de rede do `mcgit-java`). `java.rs`
+  reescrito com `ActiveModel`/`Set(...)`/transação via closure — os mesmos 4 testes de antes
+  passaram sem ajuste na lógica, só na sintaxe.
+- `apps/desktop`: `AppState.db` deixou de ser `Mutex<Db>` — `DatabaseConnection` do SeaORM já é
+  um pool interno seguro pra concorrência, o mutex virou trabalho redundante. Isso fecha um dos 4
+  débitos técnicos registrados na sessão anterior. `.setup()` do Tauri usa
+  `tauri::async_runtime::block_on` pra rodar a abertura/migração assíncrona do banco uma vez na
+  inicialização.
+- **Imprevisto real durante a verificação**: o disco ficou 100% cheio (177G de 187G, só 66M
+  livres) por causa da árvore de dependências grande que o SeaORM trouxe (`sqlx`, `sea-query`,
+  etc.) somada a lixo de builds antigas do `rusqlite`. Resolvido com `cargo clean` (11.5GB
+  liberados) — build recompilado depois disso sem problema. Vale de olho: o workspace inteiro
+  ocupa bastante espaço em builds de debug; considerar `cargo clean` periódico ou builds em
+  modo release pra verificação final, se o disco continuar apertado.
+- **Gap real descoberto testando de verdade**: depois de resetar o banco de teste (necessário —
+  o arquivo antigo não tinha a tabela `seaql_migrations` do SeaORM), "Scan for Java" não achou o
+  JDK 25 que já estava instalado em disco, porque `scan_system_java` só varre locais de
+  *sistema* (`/usr/lib/jvm`, `JAVA_HOME`, `PATH`), nunca a pasta gerenciada do próprio mcgit.
+  Contornado na hora com "Add manual Java" apontando pro binário direto (funciona, mas registra
+  como `source='manual'`, semanticamente errado). Registrado como gap real em
+  `ARCHITECTURE.md` §Débitos Técnicos — não corrigido nesta sessão (fora do escopo, que era só a
+  fundação de banco).
+- Verificação completa pela GUI real: banco resetado → app reaberto → "Add manual Java" pro JDK
+  já em disco → "Set as default" → confirmado no arquivo SQLite direto (`is_default=1`, e a
+  tabela `seaql_migrations` mostrando a migration aplicada de verdade) → app fechado e reaberto →
+  Java 25 continuou aparecendo como padrão. Mesma régua de prova da sessão anterior, agora contra
+  a fundação nova.
+- `ARCHITECTURE.md` atualizado: linha de decisão SQLite revisada (SeaORM final, não mais
+  "adiado"), linha do gatilho de migração marcada como resolvida (SeaORM trouxe migrations
+  embutidas), débito técnico do `Mutex<Db>` marcado como fechado, e o gap do "Scan" registrado
+  como novo débito técnico.
+
+**Estado ao final da sessão**: `mcgit-db` numa fundação SeaORM funcionando e verificada pela GUI
+real. A feature completa de Instância + instalação do Vanilla (já desenhada em detalhe, contrato
+da API do piston-meta confirmado ao vivo) fica pronta pra virar o próximo plano. Pendências que
+seguem de sessões anteriores: `PENDING.md` #1 (aprovação Microsoft/ID@Xbox), decisão de escopo
+do CurseForge, e agora também o gap do "Scan for Java" não redescobrir instalações gerenciadas.

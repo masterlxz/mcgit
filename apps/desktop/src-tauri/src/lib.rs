@@ -1,8 +1,6 @@
 mod commands;
 mod state;
 
-use std::sync::Mutex;
-
 use directories::ProjectDirs;
 use mcgit_db::Db;
 use tauri::Manager;
@@ -19,15 +17,13 @@ pub fn run() {
             let data_dir = project_dirs.data_dir();
             std::fs::create_dir_all(data_dir).expect("could not create mcgit data directory");
 
-            let db =
-                Db::open(&data_dir.join("mcgit.sqlite3")).expect("could not open mcgit database");
+            let db = tauri::async_runtime::block_on(Db::open(&data_dir.join("mcgit.sqlite3")))
+                .expect("could not open mcgit database");
+
             let java_dir = data_dir.join("java");
             std::fs::create_dir_all(&java_dir).expect("could not create java install directory");
 
-            app.manage(AppState {
-                db: Mutex::new(db),
-                java_dir,
-            });
+            app.manage(AppState { db, java_dir });
 
             Ok(())
         })

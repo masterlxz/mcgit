@@ -1,76 +1,92 @@
-use rusqlite::{Row, params};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
+};
 
 use crate::connection::{Db, DbError};
-use crate::models::{JavaInstallation, JavaSource, NewJavaInstallation};
+use crate::entities::java_installation::{ActiveModel, Column, Entity, JavaSource, Model};
+
+/// What's needed to insert (or, if `path` already exists, update) a row —
+/// `id`, `is_default`, and `created_at` are assigned by the database.
+pub struct NewJavaInstallation {
+    pub major_version: i32,
+    pub vendor: String,
+    pub path: String,
+    pub source: JavaSource,
+}
 
 /// Inserts a new installation, or — if `path` already exists — updates the
 /// existing row's version/vendor/source in place. `path` is the dedup key
 /// shared by the detection, download, and manual-entry flows.
-pub fn upsert_by_path(db: &Db, new: &NewJavaInstallation) -> Result<JavaInstallation, DbError> {
-    db.conn.execute(
-        "INSERT INTO java_installations (major_version, vendor, path, source)
-         VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(path) DO UPDATE SET
-            major_version = excluded.major_version,
-            vendor = excluded.vendor,
-            source = excluded.source",
-        params![new.major_version, new.vendor, new.path, new.source.as_str()],
-    )?;
-
-    find_by_path(db, &new.path)?.ok_or(DbError::NotFound)
+pub async fn upsert_by_path(db: &Db, new: NewJavaInstallation) -> Result<Model, DbError> {
+    if let Some(existing) = find_by_path(db, &new.path).await? {
+        let mut active: ActiveModel = existing.into();
+        active.major_version = Set(new.major_version);
+        active.vendor = Set(new.vendor);
+        active.source = Set(new.source);
+        Ok(active.update(&db.conn).await?)
+    } else {
+        let active = ActiveModel {
+            major_version: Set(new.major_version),
+            vendor: Set(new.vendor),
+            path: Set(new.path),
+            source: Set(new.source),
+            is_default: Set(false),
+            ..Default::default()
+        };
+        Ok(active.insert(&db.conn).await?)
+    }
 }
 
-pub fn list_all(db: &Db) -> Result<Vec<JavaInstallation>, DbError> {
-    let mut stmt = db.conn.prepare(
-        "SELECT id, major_version, vendor, path, source, is_default, created_at
-         FROM java_installations ORDER BY major_version, vendor",
-    )?;
-    let rows = stmt.query_map([], row_to_installation)?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+pub async fn list_all(db: &Db) -> Result<Vec<Model>, DbError> {
+    Entity::find()
+        .order_by_asc(Column::MajorVersion)
+        .order_by_asc(Column::Vendor)
+        .all(&db.conn)
+        .await
+        .map_err(DbError::from)
 }
 
-pub fn find_by_path(db: &Db, path: &str) -> Result<Option<JavaInstallation>, DbError> {
-    let mut stmt = db.conn.prepare(
-        "SELECT id, major_version, vendor, path, source, is_default, created_at
-         FROM java_installations WHERE path = ?1",
-    )?;
-    let mut rows = stmt.query_map(params![path], row_to_installation)?;
-    rows.next().transpose().map_err(DbError::from)
+pub async fn find_by_path(db: &Db, path: &str) -> Result<Option<Model>, DbError> {
+    Entity::find()
+        .filter(Column::Path.eq(path))
+        .one(&db.conn)
+        .await
+        .map_err(DbError::from)
 }
 
 /// Marks `id` as the default installation, clearing any previous default —
 /// wrapped in a transaction so the two updates are never observed half-done.
-pub fn set_default(db: &Db, id: i64) -> Result<(), DbError> {
-    let tx = db.conn.unchecked_transaction()?;
-    tx.execute(
-        "UPDATE java_installations SET is_default = 0 WHERE is_default = 1",
-        [],
-    )?;
-    let updated = tx.execute(
-        "UPDATE java_installations SET is_default = 1 WHERE id = ?1",
-        params![id],
-    )?;
-    if updated == 0 {
-        return Err(DbError::NotFound);
-    }
-    tx.commit()?;
-    Ok(())
-}
+pub async fn set_default(db: &Db, id: i64) -> Result<(), DbError> {
+    db.conn
+        .transaction::<_, (), DbError>(|txn| {
+            Box::pin(async move {
+                let target = Entity::find_by_id(id)
+                    .one(txn)
+                    .await?
+                    .ok_or(DbError::NotFound)?;
 
-fn row_to_installation(row: &Row) -> rusqlite::Result<JavaInstallation> {
-    let source_str: String = row.get(4)?;
-    let source = JavaSource::parse(&source_str).unwrap_or(JavaSource::Detected);
-    let is_default: i64 = row.get(5)?;
+                if let Some(current_default) = Entity::find()
+                    .filter(Column::IsDefault.eq(true))
+                    .one(txn)
+                    .await?
+                {
+                    let mut active: ActiveModel = current_default.into();
+                    active.is_default = Set(false);
+                    active.update(txn).await?;
+                }
 
-    Ok(JavaInstallation {
-        id: row.get(0)?,
-        major_version: row.get(1)?,
-        vendor: row.get(2)?,
-        path: row.get(3)?,
-        source,
-        is_default: is_default != 0,
-        created_at: row.get(6)?,
-    })
+                let mut active: ActiveModel = target.into();
+                active.is_default = Set(true);
+                active.update(txn).await?;
+
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|err| match err {
+            sea_orm::TransactionError::Connection(db_err) => DbError::Sea(db_err),
+            sea_orm::TransactionError::Transaction(db_error) => db_error,
+        })
 }
 
 #[cfg(test)]
@@ -86,53 +102,61 @@ mod tests {
         }
     }
 
-    #[test]
-    fn upsert_then_list_roundtrips() {
-        let db = Db::open_in_memory().unwrap();
-        let inserted = upsert_by_path(&db, &sample("/opt/java/21/bin/java")).unwrap();
+    #[tokio::test]
+    async fn upsert_then_list_roundtrips() {
+        let db = Db::open_in_memory().await.unwrap();
+        let inserted = upsert_by_path(&db, sample("/opt/java/21/bin/java"))
+            .await
+            .unwrap();
 
         assert_eq!(inserted.major_version, 21);
         assert_eq!(inserted.source, JavaSource::Managed);
         assert!(!inserted.is_default);
 
-        let all = list_all(&db).unwrap();
+        let all = list_all(&db).await.unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].path, "/opt/java/21/bin/java");
     }
 
-    #[test]
-    fn upsert_same_path_updates_instead_of_duplicating() {
-        let db = Db::open_in_memory().unwrap();
-        upsert_by_path(&db, &sample("/opt/java/21/bin/java")).unwrap();
+    #[tokio::test]
+    async fn upsert_same_path_updates_instead_of_duplicating() {
+        let db = Db::open_in_memory().await.unwrap();
+        upsert_by_path(&db, sample("/opt/java/21/bin/java"))
+            .await
+            .unwrap();
 
         let mut updated = sample("/opt/java/21/bin/java");
         updated.vendor = "Amazon Corretto".to_string();
-        upsert_by_path(&db, &updated).unwrap();
+        upsert_by_path(&db, updated).await.unwrap();
 
-        let all = list_all(&db).unwrap();
+        let all = list_all(&db).await.unwrap();
         assert_eq!(all.len(), 1, "same path must update, not duplicate");
         assert_eq!(all[0].vendor, "Amazon Corretto");
     }
 
-    #[test]
-    fn set_default_clears_previous_default() {
-        let db = Db::open_in_memory().unwrap();
-        let first = upsert_by_path(&db, &sample("/opt/java/17/bin/java")).unwrap();
-        let second = upsert_by_path(&db, &sample("/opt/java/21/bin/java")).unwrap();
+    #[tokio::test]
+    async fn set_default_clears_previous_default() {
+        let db = Db::open_in_memory().await.unwrap();
+        let first = upsert_by_path(&db, sample("/opt/java/17/bin/java"))
+            .await
+            .unwrap();
+        let second = upsert_by_path(&db, sample("/opt/java/21/bin/java"))
+            .await
+            .unwrap();
 
-        set_default(&db, first.id).unwrap();
-        set_default(&db, second.id).unwrap();
+        set_default(&db, first.id).await.unwrap();
+        set_default(&db, second.id).await.unwrap();
 
-        let all = list_all(&db).unwrap();
+        let all = list_all(&db).await.unwrap();
         let defaults: Vec<_> = all.iter().filter(|row| row.is_default).collect();
         assert_eq!(defaults.len(), 1, "only one row may be the default");
         assert_eq!(defaults[0].id, second.id);
     }
 
-    #[test]
-    fn set_default_on_unknown_id_errors() {
-        let db = Db::open_in_memory().unwrap();
-        let result = set_default(&db, 999);
+    #[tokio::test]
+    async fn set_default_on_unknown_id_errors() {
+        let db = Db::open_in_memory().await.unwrap();
+        let result = set_default(&db, 999).await;
         assert!(matches!(result, Err(DbError::NotFound)));
     }
 }

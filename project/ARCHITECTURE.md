@@ -72,8 +72,8 @@ mcgit/
 | Compactação do repositório (`git gc`) | Depender do auto-gc padrão do Git vs o mcgit disparar `git gc`/repack periodicamente por conta própria | **mcgit dispara `git gc` por conta própria** ✓ (decidido, Sessão 1) — sem compactar, o `.git` cresce ~5.3M por snapshot mesmo mudando só 2-3 chunks de 960; com `git gc --aggressive`, 7 snapshots ficaram do tamanho de ~1 |
 | Merge entre branches de mundo | Merge tradicional do Git vs não suportar merge (só criar/descartar branch) | **Em aberto** — não assumir que merge tradicional é seguro para arquivos de mundo |
 | Banco de dados local | SQLite vs outra opção | **SQLite** ✓ (decidido por análise, Sessão 1) — guarda só metadados, nunca o conteúdo dos arquivos do mundo (isso continua sendo Git + filesystem). Schema proposto: §Schema do Banco Local |
-| Biblioteca de acesso ao SQLite | `rusqlite` (síncrona) vs `sqlx` (assíncrona) vs `sea-orm` (ORM assíncrono) | **`rusqlite`, feature `bundled`** ✓ (decidido na implementação, Sessão 2) — app desktop de usuário único, sem necessidade de pool assíncrono; API parecida com o módulo `sqlite3` cru do Python. Chamadas de DB ficam dentro de `Mutex<Db>`, travadas direto nas funções `async` dos comandos Tauri (sem `spawn_blocking` — aceitável pra consultas locais rápidas, ver §Débitos Técnicos). `sea-orm` (usado pelo usuário em outro projeto) considerado e adiado — schema de hoje é uma tabela só |
-| Migração de schema do SQLite | Arquivo único idempotente (`schema.sql` + `CREATE TABLE IF NOT EXISTS`) vs migrations versionadas vs ORM completo (`sea-orm`) | **Adiado por decisão, gatilho definido (Sessão 2)**: o `schema.sql` único serve enquanto só *adicionamos* tabelas/colunas novas, mas não aguenta bem *alterar* algo (renomear coluna, mudar tipo) num banco com dados reais de usuário — o schema completo do PRD tem ~10 tabelas (`instances`, `accounts`, `worlds`, `mods`, `modpacks`, `backups`, `git_repositories`, `arweave_uploads`, `skins`, `settings`), então isso vai virar problema real, não hipotético. **Gatilho concreto**: na próxima tabela nova que for adicionada, trocar `schema.sql` único por migrations versionadas via `rusqlite_migration` (lista ordenada de migrations SQL + versão trackeada no banco via `PRAGMA user_version`) — resolve manutenção/legibilidade sem sair do SQL cru nem adotar um ORM inteiro. `sea-orm` continua op­ção legítima mais pra frente, se as relações entre tabelas ficarem complexas o suficiente pra valer um query builder tipado — não é a solução do problema de migração em si |
+| Biblioteca de acesso ao SQLite | `rusqlite` (síncrona) vs `sqlx` (assíncrona) vs `sea-orm` (ORM assíncrono) | **`sea-orm` 2.0** ✓ (decisão final, Sessão 2, revisando a escolha inicial de `rusqlite` da mesma sessão) — o usuário pediu pra reavaliar quando a segunda tabela (`instances`) apareceu no horizonte: com ~10 tabelas planejadas no PRD, trocar de fundação agora (2 tabelas) é mais barato que trocar depois (10 tabelas de SQL cru escritas à mão). `mcgit-db` reescrito por completo: entidades via `#[derive(DeriveEntityModel)]`, enums tipados via `DeriveActiveEnum` (`JavaSource` — string desconhecida no banco agora é erro real, não fallback silencioso), migrations via `sea-orm-migration`. `Db::open`/`open_in_memory` viraram `async`; `DatabaseConnection` é internamente um pool compartilhável, então o `Mutex<Db>` da Fase 1 original **foi removido** (ver §Débitos Técnicos — um dos 4 débitos originais já fechado). Dependências: `sea-orm`/`sea-orm-migration` com features `macros, sqlx-sqlite, runtime-tokio-rustls` (traz `sqlx` por baixo, mas a API de aplicação é a do SeaORM) |
+| Migração de schema do SQLite | Arquivo único idempotente (`schema.sql`) vs `rusqlite_migration` vs ORM completo (`sea-orm`) | **Resolvido junto com a decisão acima (Sessão 2)** — a troca pra SeaORM já veio com `sea-orm-migration` embutido, então o meio-termo (`rusqlite_migration`) nunca chegou a ser necessário. Migrations vivem em `crates/mcgit-db/src/migrations/`, uma por tabela (`m20260816_000001_create_java_installations.rs` reaplica o schema que o `rusqlite` já usava, incluindo o índice único parcial do `is_default` — escrito como SQL cru via `execute_unprepared`, porque o construtor de schema do SeaORM não cobre bem valor-padrão-por-função (`datetime('now')`) nem índice parcial; escrito assim de propósito, não por falta de tentar o construtor). Rastreamento de quais migrations já rodaram fica numa tabela própria (`seaql_migrations`), confirmado funcionando contra o banco real |
 | Gerenciamento de Java | Baixar/gerenciar builds próprias vs delegar pra lib existente | **Baixar builds Eclipse Temurin/Adoptium** ✓ (decidido por análise, Sessão 1) — ver §Gerenciamento de Java |
 | Integração de modpacks | Modrinth API vs CurseForge API vs ambas desde o início | **Modrinth primeiro** ✓ (decidido por análise, Sessão 1) — API mais aberta; CurseForge condicionado à revisão de ToS (§Legal & Licenciamento) |
 | Fluxo de autenticação Microsoft | Detalhes exatos do OAuth | **Cadeia MS OAuth → Xbox Live → XSTS → Minecraft Services** ✓ (decidido por análise, Sessão 1) — ver §Fluxo de Autenticação Microsoft. Registro do app no Azure AD é ação prática pendente, não decisão técnica |
@@ -145,15 +145,15 @@ padrão → persistência confirmada reabrindo o app.
   compilado na plataforma certa via `#[cfg]`) → localização do binário na árvore extraída (busca
   limitada, já que o nome da pasta-raiz varia por versão, ex. `jdk-21.0.12+8`).
 - **Persistência** (`mcgit-db`): tabela `java_installations` estendida (ver §Schema do Banco
-  Local abaixo) via `rusqlite` (feature `bundled`, sem dependência de SQLite do sistema).
+  Local abaixo), acesso via SeaORM 2.0 (entidade + migration — trocado do `rusqlite` original
+  logo em seguida na mesma sessão, ver a tabela de Decisões de Arquitetura).
 - **Ponte Tauri** (`apps/desktop/src-tauri/src/commands/java.rs`): único lugar onde
   `mcgit-java` e `mcgit-db` se conectam, como a arquitetura exige — 6 comandos
   (`scan_system_java`, `list_java_installations`, `list_installable_java_versions`,
   `install_java`, `add_manual_java`, `set_default_java`) + evento `java://install-progress`.
 
 **Simplificações conscientes, registradas como débito técnico leve** (ver §Débitos Técnicos):
-o `Mutex<Db>` é travado direto dentro das funções `async` dos comandos (sem `spawn_blocking`),
-aceitável pra consultas SQLite locais rápidas; a extração de arquivo dentro de
+a extração de arquivo dentro de
 `install::download_and_install` roda de forma síncrona/bloqueante mesmo estando dentro de uma
 `async fn` (alguns segundos de stall no executor durante a extração, imperceptível numa UI que já
 mostra barra de progresso, mas não é o "jeito mais puro" de fazer); os eventos de progresso de
@@ -206,9 +206,10 @@ código real até agora): ganhou `source` (`'managed'|'detected'|'manual'` — n
 detecção, download e entrada manual escrevem na mesma tabela e não podem se confundir) e
 `is_default` (boolean), com **unicidade de "só um padrão" garantida por um índice único parcial
 do SQLite** (`CREATE UNIQUE INDEX ... WHERE is_default = 1`), não por disciplina da aplicação.
-`path` é `UNIQUE` e é a chave de dedup entre os três fluxos (`INSERT ... ON CONFLICT(path) DO
-UPDATE ...`). Acesso via `rusqlite` (feature `bundled`) — decisão registrada na tabela de
-Decisões de Arquitetura abaixo.
+`path` é `UNIQUE` e é a chave de dedup entre os três fluxos (upsert via busca-então-branco
+inserir/atualizar). Acesso via SeaORM 2.0 (entidade + migration) — decisão final registrada na
+tabela de Decisões de Arquitetura abaixo, revisada da escolha inicial (`rusqlite`) na mesma
+sessão.
 
 ---
 
@@ -277,9 +278,21 @@ conta aqui):
   por chunk num download de ~200MB) geram milhares de eventos `java://install-progress` por
   instalação. Funcionou sem problema no teste real, mas não tem limite de taxa — se a UI ficar
   pesada com isso, precisa agrupar por tempo (ex.: só emitir a cada 100ms) ou por percentual.
-- **`Mutex<Db>` travado direto nas funções `async` dos comandos Tauri, sem `spawn_blocking`** —
-  ver a linha correspondente na tabela de Decisões de Arquitetura. Aceitável pra SQLite local
-  rápido; documentado aqui só pra não parecer descuido se alguém notar depois.
+- ~~`Mutex<Db>` travado direto nas funções `async` dos comandos Tauri, sem `spawn_blocking`~~ —
+  **resolvido (Sessão 2, migração pra SeaORM)**: `DatabaseConnection` já é um pool interno seguro
+  pra chamar de várias tasks assíncronas ao mesmo tempo, o `Mutex` virou desnecessário e foi
+  removido de `AppState`.
+- **"Scan for Java" não redescobre instalações gerenciadas (`source='managed'`) depois de um
+  reset de banco** — descoberto testando a migração pro SeaORM na prática (o banco de teste foi
+  resetado, o JDK 25 continuava em disco, mas "Scan" não achou nada, porque ele só varre locais
+  do *sistema* — `/usr/lib/jvm`, `JAVA_HOME`, `PATH` — nunca a pasta gerenciada do próprio mcgit).
+  Contornado na hora com "Add manual Java" apontando pro binário direto (funciona, mas registra
+  como `source='manual'`, não `'managed'` — semanticamente errado). Não bloqueou a verificação
+  desta sessão, mas é um gap real de UX: um usuário que reinstale o app (ou perca o banco por
+  qualquer motivo) não teria como recuperar instalações gerenciadas sem apontar manualmente pra
+  cada uma. Correção natural: `scan_system_java` também varrer `state.java_dir` além dos locais
+  de sistema. Não corrigido nesta sessão — fora do escopo do plano (migração de fundação, não
+  correção de feature).
 
 ---
 
