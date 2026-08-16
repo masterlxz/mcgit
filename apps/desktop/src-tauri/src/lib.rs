@@ -23,7 +23,19 @@ pub fn run() {
             let java_dir = data_dir.join("java");
             std::fs::create_dir_all(&java_dir).expect("could not create java install directory");
 
-            app.manage(AppState { db, java_dir });
+            let instances_dir = data_dir.join("instances");
+            std::fs::create_dir_all(&instances_dir).expect("could not create instances directory");
+
+            let library_cache_dir = data_dir.join("cache").join("minecraft");
+            std::fs::create_dir_all(&library_cache_dir)
+                .expect("could not create minecraft library cache directory");
+
+            app.manage(AppState {
+                db,
+                java_dir,
+                instances_dir,
+                library_cache_dir,
+            });
 
             Ok(())
         })
@@ -34,6 +46,9 @@ pub fn run() {
             commands::java::install_java,
             commands::java::add_manual_java,
             commands::java::set_default_java,
+            commands::instance::list_instances,
+            commands::instance::list_mc_versions,
+            commands::instance::create_vanilla_instance,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

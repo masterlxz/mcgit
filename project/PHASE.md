@@ -105,18 +105,36 @@ Microsoft, estratégia de armazenamento de `.mca`, e revisão legal/licenciament
 mundo. GUI é o produto principal desde esta fase (não uma fase separada e tardia); CLI existe
 em paralelo, opcional. Absorve o que era "Fase 1 — MVP local" do mcgit-ferramenta (v1.0).
 
-- [ ] Login com conta Microsoft (OAuth, sem armazenar senha)
-- [ ] Instalação de Minecraft Vanilla (download de version manifest, libraries, natives)
+- [ ] Login com conta Microsoft (OAuth, sem armazenar senha) — pausado nesta sessão (Sessão 3,
+  2026-08-16): tentativa real de ID@Xbox e de app registration no Azure esbarrou numa cadeia de
+  pré-requisitos (CNPJ → DUNS number → cadastro de Xbox Partner; e conta Azure exige cartão de
+  crédito pra criar um "directory"). Detalhes completos em `PENDING.md` #1. Não bloqueia o resto
+  da Fase 1 além do login/lançamento autenticado em si.
+- [x] Instalação de Minecraft Vanilla (download de version manifest, libraries, natives) —
+  implementado (Sessão 3, 2026-08-16) junto com "Criar instância" abaixo, ver detalhes lá.
 - [x] Gerenciamento de Java — Java Manager implementado (Sessão 2, 2026-08-16): detecção de
   instalações no sistema, listagem de versões LTS via API do Adoptium, download+verificação de
   checksum+extração+instalação, seleção de padrão, e adição manual (usuário avançado) — tudo
   testado de ponta a ponta pela GUI real (Tauri+React), com persistência confirmada via SQLite
   (sobrevive a fechar/reabrir o app). Detalhes: `ARCHITECTURE.md` §Java Manager (implementado).
-  Falta pra fechar o item por completo: detectar automaticamente a versão *necessária* a partir
-  do manifesto de uma instância específica — não dá pra fazer isso ainda porque "instância" não
-  existe como conceito no código (só o Java Manager isolado, por decisão de escopo da sessão).
-- [ ] Criar instância (isolada: Minecraft, config, saves, logs próprios)
-- [ ] Iniciar o Minecraft a partir de uma instância (Game Runner multiplataforma)
+  **Update (Sessão 3, 2026-08-16)**: o item que faltava — detectar automaticamente a versão de
+  Java exigida a partir do manifesto de uma instância — está fechado. `create_vanilla_instance`
+  lê `javaVersion.majorVersion` do manifesto da Mojang e resolve/instala o Java certo sozinho,
+  reaproveitando uma instalação já existente quando possível (validado ao vivo: reaproveitou o
+  JDK 25 já instalado na sessão anterior, sem baixar de novo).
+- [x] Criar instância (isolada: Minecraft, config, saves, logs próprios) — implementado e
+  testado de ponta a ponta pela GUI real (Sessão 3, 2026-08-16). Novos crates `mcgit-minecraft`
+  (cliente do `piston-meta`: manifesto, libraries filtradas por SO, assets, download com
+  progresso e verificação sha1) e `mcgit-instance` (scaffolding de pastas + `instance.json`),
+  mais a tabela `instances` no `mcgit-db` (primeira relação real do projeto via SeaORM,
+  `belongs_to` pra `java_installations`). Cache global compartilhado de libraries/assets fora da
+  pasta de cada instância, keyed por hash — implementa o design já documentado em
+  `ARCHITECTURE.md` §Gerenciamento de Instâncias. Escopo combinado com o usuário: para em
+  "instância pronta com o Vanilla baixado e verificado", não inclui abrir o jogo. Detalhes
+  completos em `ARCHITECTURE.md` §Instância + Vanilla Install (implementado).
+- [ ] Iniciar o Minecraft a partir de uma instância (Game Runner multiplataforma) — próximo item
+  natural da Fase 1, mas depende de uma sessão autenticada da Minecraft Services API pra testar
+  de ponta a ponta (login MS pausado, ver acima).
 - [ ] Gerenciar mundos dentro de uma instância (listar, abrir pasta, etc.)
 - [ ] Ativar versionamento Git num mundo (opt-in, não forçado) — comandos internos equivalentes a `mcgit init`
 - [ ] Criar versão/snapshot (equivalente a `mcgit snapshot`) — UI diz "Salvar versão", não "commit"

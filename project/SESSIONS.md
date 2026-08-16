@@ -364,3 +364,67 @@ real. A feature completa de Instância + instalação do Vanilla (já desenhada 
 da API do piston-meta confirmado ao vivo) fica pronta pra virar o próximo plano. Pendências que
 seguem de sessões anteriores: `PENDING.md` #1 (aprovação Microsoft/ID@Xbox), decisão de escopo
 do CurseForge, e agora também o gap do "Scan for Java" não redescobrir instalações gerenciadas.
+
+---
+
+## Sessão 3 — 2026-08-16 — ID@Xbox/Azure investigados e pausados; Fase 1: Instância + Vanilla Install
+
+**Parte 1 — tentativa real de destravar `PENDING.md` #1 (login Microsoft)**: usuário tentou
+preencher o formulário de cadastro de Xbox Partner (pré-requisito do ID@Xbox), com prints reais
+da tela. Achados que mudam o que se sabia antes:
+
+- O campo **DUNS Number** é obrigatório na prática (trava o avanço), apesar do texto de ajuda do
+  próprio formulário sugerir que seria opcional.
+- Tirar um DUNS number no Brasil **exige CNPJ** — não emite pra CPF de pessoa física sem empresa
+  registrada.
+- Cadeia de dependência completa: abrir CNPJ (ex.: MEI) → tirar DUNS number → cadastro de Xbox
+  Partner → aplicação ID@Xbox → aprovação humana do `XboxLive.signin`. Bem mais pesada que o
+  "só preencher formulário" assumido antes.
+- Em paralelo, o **app registration no Azure** — que se achava autosserviço, sem pré-requisito —
+  também esbarrou: a Microsoft descontinuou criar apps fora de um "directory" (tenant). O M365
+  Developer Program (a saída sem cartão de crédito) **não qualificou** a conta do usuário
+  (política atual reserva o sandbox gratuito principalmente pra assinantes do Visual Studio). A
+  única saída restante é conta Azure gratuita, que exige cartão pra verificação de identidade
+  (sem cobrança, mas exige).
+- **Decisão do usuário**: pausar as duas frentes (ID@Xbox e Azure) por ora. Detalhe completo em
+  `PENDING.md` #1.
+
+**Parte 2 — Instância + instalação do Vanilla (Fase 1)**: com o login MS pausado, seguiu pro
+próximo item não-bloqueado da Fase 1. Escopo combinado explicitamente com o usuário via
+`AskUserQuestion`: entrega "instância criada + Vanilla baixado/verificado em disco", **sem**
+lançar o jogo (Game Runner fica pra depois, quando/se o login destravar). Navegação: instalado
+`react-router` (com `HashRouter`, necessário porque um app Tauri não tem servidor resolvendo
+paths arbitrários) em vez do `useState` de aba simples que era o default proposto — decisão
+também confirmada com o usuário.
+
+- Planejamento em `/plan` real: 3 agentes de exploração em paralelo (docs do projeto, padrões de
+  código de `mcgit-db`/`mcgit-java`, padrões da UI React) + 1 agente de design, que **reverificou
+  ao vivo o contrato do `piston-meta`** — a versão "confirmada" numa sessão anterior tinha se
+  perdido junto com o arquivo de plano sobrescrito, então não podia ser reaproveitada de memória.
+- Construído incremento por incremento (13 no total, cada um com build/teste verificando antes
+  do próximo), seguindo `modo ensino`: crates novos `mcgit-minecraft` (cliente do piston-meta) e
+  `mcgit-instance` (scaffolding de pastas), tabela `instances` no `mcgit-db` (primeira relação
+  real via SeaORM), 3 comandos Tauri novos, telas React novas. Detalhes técnicos completos em
+  `ARCHITECTURE.md` §Instância + Vanilla Install (implementado) e `PHASE.md` Fase 1.
+- **Bug de compilação real encontrado e corrigido**: o macro de comandos do Tauri rejeitou a
+  primeira versão do código de download em paralelo (`buffer_unordered` sobre um iterador de
+  referências emprestadas) com erro de lifetime (`FnOnce is not general enough`) — um limite
+  conhecido de inferência do rustc. Corrigido clonando os itens antes de iterar.
+- **Disco ficou apertado de novo** (a mesma classe de problema da Sessão 2 com o SeaORM): só
+  3.5GB livres antes da verificação manual. Resolvido com `cargo clean` (9.2GB liberados) antes
+  de rodar o `tauri dev` — decisão confirmada com o usuário via `AskUserQuestion` em vez de
+  assumida.
+- **Verificação de ponta a ponta pela GUI real**, feita pelo próprio usuário (sem ferramenta de
+  automação de GUI disponível nesta sessão): criou uma instância pra Minecraft 26.2 de verdade.
+  Confirmado depois via disco/banco: `client.jar` com exatamente 39.193.383 bytes (bate com o
+  valor real capturado direto da API da Mojang), ~468MB de assets e ~77MB de libraries no cache
+  compartilhado, `instance.json` com `java_installation_path` resolvido, linha no banco com
+  `status='ready'`. A resolução de Java reaproveitou o JDK 25 já instalado (sem baixar de novo),
+  confirmando que a detecção de "instalação existente ainda válida" funciona antes de partir pro
+  download.
+
+**Estado ao final da sessão**: Fase 1 tem Java Manager + Instância/Vanilla Install completos e
+verificados. Login Microsoft, Game Runner, e resto da Fase 1 (mundos, versionamento Git,
+snapshots) seguem não implementados. Pendências que seguem de sessões anteriores: decisão de
+escopo do CurseForge; `PENDING.md` #1 agora com a cadeia de dependência CNPJ→DUNS→ID@Xbox
+mapeada, mas pausado por decisão do usuário.

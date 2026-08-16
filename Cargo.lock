@@ -2873,12 +2873,24 @@ version = "0.1.0"
 dependencies = [
  "directories",
  "mcgit-db",
+ "mcgit-instance",
  "mcgit-java",
+ "mcgit-minecraft",
+ "reqwest",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+]
+
+[[package]]
+name = "mcgit-instance"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -2895,6 +2907,19 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "zip",
+]
+
+[[package]]
+name = "mcgit-minecraft"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha1",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]

@@ -111,8 +111,8 @@ texto puro no SQLite — ver `CONTEXT.md` §Security Requirements).
 ## Gerenciamento de Java
 
 - Detectar a versão necessária a partir do manifesto de versão do Minecraft (Mojang informa
-  isso por versão no próprio piston-meta). **Ainda não implementado** — depende do conceito de
-  instância, que não existe em código ainda (ver abaixo).
+  isso por versão no próprio piston-meta). **Implementado (Sessão 3, 2026-08-16)** — ver
+  §Instância + Vanilla Install abaixo.
 - Nunca depender só do "Java do sistema" — instâncias diferentes podem precisar de versões
   diferentes ao mesmo tempo (Java 17 pra 1.20.x, Java 21 pra 1.21.x).
 - Baixar builds do **Eclipse Temurin/Adoptium** (OpenJDK redistribuível, sem os requisitos de
@@ -177,7 +177,58 @@ Bibliotecas/assets/natives compartilhados (o client jar do Minecraft 1.21.1 não
 instâncias) ficam num cache global fora da pasta da instância, referenciado por hash/versão —
 evita duplicar GBs de arquivos idênticos entre instâncias parecidas, sem quebrar o isolamento
 do que realmente precisa ser isolado (config/mods/saves). Mesma solução que Prism Launcher e
-MultiMC já usam.
+MultiMC já usam. **Nota**: esse design é a suposição de trabalho documentada aqui, não uma
+decisão revalidada — `ROADMAP.md` ainda lista "compartilhado vs. isolado" como pergunta em
+aberto. A implementação abaixo herdou essa suposição sem re-decidir.
+
+### Instância + Vanilla Install — implementado (Sessão 3, 2026-08-16)
+
+Segundo slice de código de produto do projeto, construído sobre a fundação SeaORM da sessão
+anterior. Entrega "criar uma instância e ter o Vanilla baixado, verificado e pronto em disco" —
+**não inclui lançar o jogo** (Game Runner, item separado da Fase 1, depende de sessão
+autenticada da Minecraft Services API, e o login Microsoft está pausado — ver `PENDING.md` #1).
+Testado de ponta a ponta pela GUI real: criar instância → resolver Java automaticamente
+(reaproveitou o JDK 25 já instalado, sem baixar de novo) → baixar client jar + libraries +
+assets → instância marcada `ready`.
+
+- **Contrato do `piston-meta`** verificado ao vivo nesta sessão (não reaproveitado de memória
+  — uma tentativa anterior de desenhar essa feature tinha "confirmado" o contrato, mas o plano
+  foi sobrescrito antes de implementar e a informação se perdeu). Confirmado: `libraries[]` usa
+  um array `rules` (`{action, os: {name}}`, última regra que bate manda) pra restringir por SO —
+  manifestos modernos não usam mais `downloads.classifiers` de natives, então não precisa de
+  lógica de "extrair classifier zip".
+- **`crates/mcgit-minecraft`** (biblioteca pura, sem Tauri/SQLite, mesmo princípio do
+  `mcgit-java`): `manifest` (busca+parse do manifesto e do JSON por versão), `libraries` (filtro
+  de SO via `rules`), `assets` (índice de assets, URL/caminho de cache content-addressed),
+  `install` (orquestra tudo — client jar, libraries e assets em paralelo com concorrência
+  limitada via `buffer_unordered`, verificação sha1 por arquivo, cache-hit por hash antes de
+  baixar de novo, throttle de progresso — resolvendo de saída o débito de throttle que o Java
+  Manager tem hoje). Testes: fixtures reais capturadas ao vivo + um teste `#[ignore]` que baixa
+  de verdade uma versão pequena (`rd-132211`, ~2009, ~49MB) contra a API real.
+- **`crates/mcgit-instance`** (biblioteca pura, sem DB/Tauri/rede): scaffolding de
+  `instances/<id>/minecraft/{7 subpastas}` + leitura/escrita de `instance.json`.
+- **Tabela `instances`** (`mcgit-db`): primeira relação real do projeto via SeaORM
+  (`belongs_to` pra `java_installations`, `ON DELETE SET NULL`) — ver §Schema do Banco Local.
+- **Ponte Tauri** (`apps/desktop/src-tauri/src/commands/instance.rs`): 3 comandos
+  (`list_instances`, `list_mc_versions`, `create_vanilla_instance`) + evento
+  `instance://install-progress`. `create_vanilla_instance` orquestra manifesto → linha no banco
+  (`status='installing'`) → scaffold de pastas → resolver Java (reaproveita instalação validada
+  ou baixa uma nova, via `mcgit-java` sem modificar esse crate) → download do Vanilla → escreve
+  `instance.json` final → marca `ready`. Falha em qualquer etapa marca `failed` em vez de deixar
+  a linha desaparecer ou num estado ambíguo — linha e pasta parcial ficam em disco pra
+  diagnóstico.
+- **Um detalhe de compilação que vale registrar**: o macro de comandos do Tauri rejeitou a
+  primeira versão de `download_libraries`/`download_assets` em `mcgit-minecraft::install` com
+  erros de lifetime (`implementation of FnOnce is not general enough`) — closures assíncronas
+  dentro de `.map()` capturando referências emprestadas de um `Vec<&T>`, um limite conhecido de
+  inferência do rustc. Corrigido clonando os itens antes (`Vec<T>` em vez de `Vec<&T>`,
+  `.into_iter()` em vez de `.iter()`).
+
+**Validado ao vivo** (não só compilado): instância criada de verdade pra Minecraft 26.2 pela GUI
+real — `client.jar` com exatamente 39.193.383 bytes (bate com o valor real capturado direto da
+API), ~468MB de assets e ~77MB de libraries no cache compartilhado, `instance.json` com
+`java_installation_path` resolvido, linha no banco com `status='ready'` e `java_installation_id`
+preenchido.
 
 ---
 
@@ -210,6 +261,22 @@ do SQLite** (`CREATE UNIQUE INDEX ... WHERE is_default = 1`), não por disciplin
 inserir/atualizar). Acesso via SeaORM 2.0 (entidade + migration) — decisão final registrada na
 tabela de Decisões de Arquitetura abaixo, revisada da escolha inicial (`rusqlite`) na mesma
 sessão.
+
+**`instances` implementada** (Sessão 3, 2026-08-16) — schema real, diferente do esboço acima:
+
+```sql
+instances(id, name, mc_version, loader, loader_version, java_installation_id, jvm_args, status, created_at)
+```
+
+Diferenças deliberadas do esboço original: (1) `java_installation_id` é uma FK real pra
+`java_installations(id)` (`ON DELETE SET NULL`) em vez de um `java_version` solto — primeiro uso
+de `DeriveRelation`/`belongs_to` no projeto; (2) coluna `status`
+(`'installing'|'ready'|'failed'`) adicionada — não existia no esboço, mas é necessária porque a
+instalação do Vanilla é uma operação de rede longa e interrompível, e uma linha existe antes de
+qualquer arquivo existir em disco; (3) `loader` é um enum tipado (`DeriveActiveEnum`, só
+`'vanilla'` por enquanto) em vez de `TEXT` livre, mesmo padrão de `JavaSource` — Fase 3
+(Fabric/Forge/NeoForge) só precisa adicionar variantes. Pasta em disco nomeada pelo `id`
+autoincrement do banco, não UUID (sem precedente de UUID em nenhuma outra tabela do projeto).
 
 ---
 
@@ -293,6 +360,10 @@ conta aqui):
   cada uma. Correção natural: `scan_system_java` também varrer `state.java_dir` além dos locais
   de sistema. Não corrigido nesta sessão — fora do escopo do plano (migração de fundação, não
   correção de feature).
+- **`delete_instance` não existe** (Sessão 3, 2026-08-16) — decisão de escopo deliberada, não
+  esquecimento: o plano da feature Instância + Vanilla Install cobria só criar/listar. Uma
+  instância `failed` ou que o usuário não quer mais fica no banco e em disco sem jeito de
+  remover pela UI ainda.
 
 ---
 
