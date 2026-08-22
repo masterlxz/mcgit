@@ -714,3 +714,40 @@ checklist atualizado em `PHASE.md` Fase 1.
 pro usuário avançado) e a CLI opcional em paralelo. Game Runner e login Microsoft seguem
 pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não
 urgente.
+
+---
+
+## Sessão 7 (segunda continuação) — 2026-08-22 — Fase 1: Modo Básico/Avançado
+
+`CONTEXT.md` já especificava o toggle ("avançado expõe Git — commits/branches/remotes/diff,
+básico não"), mas branches/remotes/diff ainda não são features implementadas. Escopo confirmado
+com o usuário antes de planejar: revelar só o que já existe de verdade escondido hoje — o hash
+completo do commit (sempre truncado pra 7 chars na UI) e a identidade fixa do autor
+(`mcgit <mcgit@localhost>`), já antecipada numa nota da Sessão 4 — deixando branches/remotes/
+diff pra quando essas features existirem (Fase 6+).
+
+- **Zero mudança em Rust/DB**: o hash completo já vinha de `log()`, só estava sendo cortado no
+  React; a identidade é sempre a mesma constante por design.
+- **`AdvancedModeContext.tsx`** (novo): Context + Provider + `useAdvancedMode()`, persistido em
+  `localStorage` — decisão deliberada de não abrir uma migration nova no banco pra uma
+  preferência de UI, não um dado de jogo. Usado via Context (não prop-drilling) porque
+  `WorldHistory.tsx` fica 3 níveis abaixo do provider.
+- Toggle "Advanced mode" na barra de navegação (`App.tsx`).
+- `WorldHistory.tsx`: hash completo (40 chars) + linha de autor em Modo Avançado; Modo Básico
+  continua idêntico a antes.
+
+Implementado sem mudança de conceito nova de Rust/Git (feature 100% frontend), então sem
+incrementos de modo ensino nesta sessão além do padrão usual de checkpoint por etapa.
+
+**Verificado ao vivo pela GUI real**: hash completo e autor batendo exatamente com
+`git log --format="%H %an <%ae>"` rodado direto no mundo de teste; toggle desligado volta ao
+hash curto sem autor; persistência confirmada de verdade — app encerrado e relançado do zero,
+estado do toggle sobreviveu via `localStorage`.
+
+Detalhes técnicos completos em `ARCHITECTURE.md` §Modo Básico/Avançado; checklist atualizado
+em `PHASE.md` Fase 1.
+
+**Estado ao final da sessão**: único item restante da Fase 1 é a CLI opcional em paralelo
+(`mcgit init/snapshot/snapshots/restore/delete`, `mcgit create/launch`) — nunca bloqueante pro
+jogador comum. Game Runner e login Microsoft seguem pausados/bloqueados por `PENDING.md` #1;
+decisão de escopo do CurseForge segue em aberto, não urgente.

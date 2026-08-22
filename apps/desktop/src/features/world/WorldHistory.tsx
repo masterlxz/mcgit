@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAdvancedMode } from "../../context/AdvancedModeContext";
 import type { Snapshot } from "../../api/world";
 
 type Props = {
@@ -11,6 +12,7 @@ type Confirming = { hash: string; action: "restore" | "delete" } | null;
 
 export function WorldHistory({ snapshots, onRestore, onDelete }: Props) {
   const [confirming, setConfirming] = useState<Confirming>(null);
+  const { advancedMode } = useAdvancedMode();
 
   if (snapshots.length === 0) {
     return <p>No snapshots yet.</p>;
@@ -24,8 +26,14 @@ export function WorldHistory({ snapshots, onRestore, onDelete }: Props) {
 
         return (
           <li key={snapshot.hash}>
-            <code>{snapshot.hash.slice(0, 7)}</code> — {new Date(snapshot.date).toLocaleString()}{" "}
-            — {snapshot.message}{" "}
+            <code>{advancedMode ? snapshot.hash : snapshot.hash.slice(0, 7)}</code> —{" "}
+            {new Date(snapshot.date).toLocaleString()} — {snapshot.message}
+            {advancedMode && (
+              <>
+                {" "}
+                — <em>mcgit &lt;mcgit@localhost&gt;</em>
+              </>
+            )}{" "}
             {isConfirming === "restore" && (
               <>
                 <em>This will replace the world's current state.</em>{" "}

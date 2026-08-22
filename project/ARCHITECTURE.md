@@ -507,6 +507,39 @@ intacto, liberado o lock → delete volta a funcionar.
 
 ---
 
+## Modo Básico/Avançado — implementado (Sessão 7, 2026-08-22, continuação)
+
+`CONTEXT.md` já especificava esse toggle: "avançado expõe Git (commits/branches/remotes/diff)
+— básico não". Escopo desta sessão foi o que já existe de verdade por baixo dos panos hoje —
+branches, remotes e diff ainda não são features implementadas (ficam pra quando existirem,
+Fase 6+); o único detalhe de Git já escondido é o **hash completo do commit** (a UI sempre
+trunca pra 7 chars) e a **identidade fixa do autor** (`mcgit <mcgit@localhost>`, configurada por
+`ensure_identity` antes de todo commit — ver §Git Engine), já antecipada numa nota da Sessão 4
+("essa identidade vai aparecer literalmente... quando Modo Avançado existir").
+
+- **Zero mudança em Rust/DB** — feature 100% frontend. O hash completo já vinha de `log()`
+  (só estava sendo cortado no React); a identidade é sempre a mesma constante por design, não
+  precisa ser buscada por commit.
+- **`AdvancedModeContext.tsx`** (novo, `apps/desktop/src/context/`): Context + Provider +
+  hook `useAdvancedMode()`, estado booleano persistido em `localStorage`
+  (`mcgit.advancedMode`) — decisão deliberada: é uma preferência de UI do jogador, não dado de
+  mundo/instância, então não precisa de tabela nova no banco (que exigiria migration). Usado
+  via Context (não prop-drilling) porque o consumidor (`WorldHistory.tsx`) fica 3 níveis
+  abaixo do provider na árvore de componentes (`App` → `InstanceDetailScreen` →
+  `WorldList` → `WorldHistory`).
+- **Toggle na navegação** (`App.tsx`): checkbox "Advanced mode" ao lado dos links existentes.
+- **`WorldHistory.tsx`**: em Modo Avançado, cada linha do histórico mostra o hash completo (40
+  chars) em vez do curto (7 chars), mais uma linha extra com a identidade do autor
+  (`mcgit <mcgit@localhost>`); em Modo Básico, nada muda do comportamento anterior.
+
+**Validado ao vivo pela GUI real**: hash completo e linha de autor aparecem só com o toggle
+ligado, batendo exatamente com `git log --format="%H %an <%ae>"` rodado direto no mundo de
+teste; toggle desligado volta ao hash curto sem autor; **persistência real confirmada**
+fechando e reabrindo o app (processo do Tauri encerrado e relançado do zero) — o estado do
+toggle sobreviveu via `localStorage`, não só em memória do React.
+
+---
+
 ## Schema do Banco Local (SQLite) — proposta inicial
 
 ```sql

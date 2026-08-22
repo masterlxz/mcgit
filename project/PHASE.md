@@ -224,7 +224,17 @@ em paralelo, opcional. Absorve o que era "Fase 1 — MVP local" do mcgit-ferrame
   sumir, já que o Game Runner depende do login Microsoft ainda pausado (`PENDING.md` #1); texto
   reflete `status` da instância (`installing`/`failed` mostram texto próprio no botão, não o
   aviso de login). Nenhuma dependência nova, nenhuma migration — mudança só de UI.
-- [ ] Modo Básico/Avançado: avançado expõe Git (commits/branches/remotes/diff) — básico não
+- [x] Modo Básico/Avançado: avançado expõe Git (commits/branches/remotes/diff) — básico não,
+  implementado (Sessão 7, 2026-08-22, continuação) no escopo hoje possível: branches, remotes e
+  diff ainda não existem como features (ficam pra quando forem implementadas, Fase 6+); o único
+  detalhe de Git já escondido por baixo dos panos hoje é o hash completo do commit (truncado
+  pra 7 chars) e a identidade fixa do autor (`mcgit <mcgit@localhost>`), já antecipada numa nota
+  da Sessão 4. Toggle global "Advanced mode" na barra de navegação, persistido em
+  `localStorage` (decisão deliberada: preferência de UI, não dado de jogo — não abre migration
+  nova no banco). Em Modo Avançado, `WorldHistory.tsx` mostra o hash completo (40 chars) e a
+  linha de autor; em Modo Básico, continua igual a antes (hash curto, sem autor). Zero mudança
+  em Rust/DB — feature 100% frontend. Verificado ao vivo pela GUI real, incluindo persistência
+  real entre fechar/reabrir o app.
 - [ ] CLI em paralelo (opcional): `mcgit init/snapshot/snapshots/restore/delete`, `mcgit create/launch`
 - [ ] Validações de segurança básicas (ver `CONTEXT.md` §Security Requirements)
 - [ ] Testes de restauração repetidos, incluindo cenários de interrupção/corrupção
