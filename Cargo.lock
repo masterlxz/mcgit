@@ -2857,6 +2857,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcgit-core"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "mcgit-db"
 version = "0.1.0"
 dependencies = [
@@ -2872,6 +2879,7 @@ name = "mcgit-desktop"
 version = "0.1.0"
 dependencies = [
  "directories",
+ "mcgit-core",
  "mcgit-db",
  "mcgit-instance",
  "mcgit-java",

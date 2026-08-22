@@ -2,8 +2,17 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type World = {
   folder_name: string;
+  git_enabled: boolean;
 };
 
 export function listWorlds(instanceId: number): Promise<World[]> {
   return invoke("list_worlds", { instanceId });
+}
+
+export function enableWorldVersioning(instanceId: number, folderName: string): Promise<World> {
+  return invoke("enable_world_versioning", { instanceId, folderName });
+}
+
+export function disableWorldVersioning(instanceId: number, folderName: string): Promise<World> {
+  return invoke("disable_world_versioning", { instanceId, folderName });
 }
