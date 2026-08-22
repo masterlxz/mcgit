@@ -1,4 +1,5 @@
 import { HashRouter, Link, Route, Routes } from "react-router-dom";
+import { InstanceDetailScreen } from "./features/instance/InstanceDetailScreen";
 import { InstanceManagerScreen } from "./features/instance/InstanceManagerScreen";
 import { JavaManagerScreen } from "./features/java/JavaManagerScreen";
 import "./App.css";
@@ -12,6 +13,7 @@ function App() {
         </nav>
         <Routes>
           <Route path="/" element={<InstanceManagerScreen />} />
+          <Route path="/instances/:id" element={<InstanceDetailScreen />} />
           <Route path="/java" element={<JavaManagerScreen />} />
         </Routes>
       </main>

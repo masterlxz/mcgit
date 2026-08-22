@@ -49,6 +49,7 @@ pub fn run() {
             commands::instance::list_instances,
             commands::instance::list_mc_versions,
             commands::instance::create_vanilla_instance,
+            commands::world::list_worlds,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
