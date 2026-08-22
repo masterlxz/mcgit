@@ -7,6 +7,7 @@ import {
   enableWorldVersioning,
   listWorldHistory,
   listWorlds,
+  restoreWorldVersion,
   type Snapshot,
   type World,
 } from "../../api/world";
@@ -79,6 +80,25 @@ export function InstanceDetailScreen() {
     }
   }
 
+  async function handleRestore(folderName: string, hash: string) {
+    setError(null);
+    setStatus(null);
+    try {
+      const result = await restoreWorldVersion(instanceId, folderName, hash);
+      const short = hash.slice(0, 7);
+      if (!result.restored) {
+        setStatus(`Already at this version (${short}).`);
+      } else if (result.backup_created) {
+        setStatus(`Created a backup and restored to ${short}.`);
+      } else {
+        setStatus(`Restored to ${short}.`);
+      }
+      await handleShowHistory(folderName);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   return (
     <section>
       <p>
@@ -95,6 +115,7 @@ export function InstanceDetailScreen() {
         onToggleVersioning={handleToggleVersioning}
         onSaveSnapshot={handleSaveSnapshot}
         onShowHistory={handleShowHistory}
+        onRestore={handleRestore}
       />
     </section>
   );

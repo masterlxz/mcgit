@@ -54,6 +54,7 @@ pub fn run() {
             commands::world::disable_world_versioning,
             commands::world::create_world_snapshot,
             commands::world::list_world_history,
+            commands::world::restore_world_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

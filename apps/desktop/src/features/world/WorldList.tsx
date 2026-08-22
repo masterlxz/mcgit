@@ -9,6 +9,7 @@ type Props = {
   onToggleVersioning: (folderName: string, enable: boolean) => void;
   onSaveSnapshot: (folderName: string, message: string) => void;
   onShowHistory: (folderName: string) => void;
+  onRestore: (folderName: string, hash: string) => void;
 };
 
 export function WorldList({
@@ -17,6 +18,7 @@ export function WorldList({
   onToggleVersioning,
   onSaveSnapshot,
   onShowHistory,
+  onRestore,
 }: Props) {
   const [openHistoryFor, setOpenHistoryFor] = useState<Set<string>>(new Set());
 
@@ -52,7 +54,10 @@ export function WorldList({
                 {openHistoryFor.has(world.folder_name) ? "Hide history" : "Show history"}
               </button>
               {openHistoryFor.has(world.folder_name) && (
-                <WorldHistory snapshots={historyByWorld[world.folder_name] ?? []} />
+                <WorldHistory
+                  snapshots={historyByWorld[world.folder_name] ?? []}
+                  onRestore={(hash) => onRestore(world.folder_name, hash)}
+                />
               )}
             </>
           ) : (

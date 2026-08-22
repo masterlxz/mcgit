@@ -578,3 +578,61 @@ vivo. Próximo item não-bloqueado do checklist: "Restaurar uma versão" (`git c
 checagem de mundo aberto, checkpoint de segurança antes de restaurar). Login Microsoft e Game
 Runner seguem pausados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto,
 não urgente.
+
+---
+
+## Sessão 6 — 2026-08-22 — Fase 1: Restaurar uma versão
+
+Última peça do ciclo básico do Git Engine. O `CONTEXT.md` já tinha essa feature especificada
+desde antes desta sessão, com dois requisitos de segurança: checagem de mundo aberto ("when
+possible") e checkpoint de segurança antes de restaurar ("non-negotiable"). Duas decisões
+confirmadas com o usuário antes de planejar: implementar a checagem de mundo aberto agora (não
+adiar pro Game Runner) e usar confirmação inline em vez de modal (mockup do `CONTEXT.md` sugere
+modal, mas nenhuma feature anterior do projeto usa um).
+
+- **`mcgit-core::git::restore()`**: nunca destrutivo — `git checkout <hash> -- .` + commit novo
+  em cima, nunca `reset --hard`. Reaproveita `commit()` duas vezes: uma pro checkpoint de
+  segurança ("Backup before restoring"), outra pra registrar a restauração ("Restored to
+  `<hash>`"). `is_currently_open()` tenta adquirir o mesmo lock exclusivo de `session.lock` que
+  o próprio Minecraft usa — usando `std::fs::File::try_lock`/`unlock`, API nativa do Rust
+  (estabilizada recentemente), **sem precisar da dependência `fs4` cogitada no planejamento**.
+  Novo `RestoreError` (`WorldCurrentlyOpen` + `Git`/`Io` via `#[from]`). 5 testes novos, 16/16
+  verdes no crate.
+- **Ponte Tauri**: `restore_world_version` + `RestoreDto { backup_created, restored }`.
+- **UI**: confirmação inline por snapshot em `WorldHistory.tsx` ("Restore" → aviso + "Cancel"/
+  "Create Backup and Restore", texto inspirado no mockup do `CONTEXT.md`), sem modal novo.
+  `InstanceDetailScreen.tsx` monta a mensagem de status a partir do resultado e recarrega o
+  histórico do mundo automaticamente.
+
+**Bug real encontrado e corrigido durante a verificação ao vivo**: o próprio `session.lock`
+(usado pela nova checagem de mundo aberto) estava sendo versionado junto pelo `git add -A` do
+`commit()`. A primeira correção tentada — um `.gitignore` rastreado, auto-commitado no `git
+init` — criava um problema pior: uma entrada de sistema ("Start versioning this world")
+aparecendo na timeline do jogador como se fosse um snapshot de verdade. Correção final:
+`.git/info/exclude` (mecanismo nativo do Git pra exclusões só-locais, nunca precisa de commit)
+— um mundo recém-versionado continua com histórico zerado até o jogador salvar de verdade,
+exatamente como antes dessa mudança.
+
+Implementado em incrementos de modo ensino (explicando o mecanismo de lock de arquivo/
+`session.lock` e por que `checkout + commit` é mais seguro que `reset --hard` antes do código
+de `restore()`), cada um com seu checkpoint de build/teste.
+
+**Verificado ao vivo pela GUI real** (mesma técnica de sempre — `GDK_BACKEND=x11` + `xdotool` +
+`spectacle`; um mundo fake reaproveitado e outro criado do zero, ambos removidos ao final):
+3 snapshots criados; restaurar pro mais antigo sem mudança pendente (só o commit de restore,
+sem backup) confirmado por conteúdo de arquivo e `git log` reais; restaurar de novo com uma
+mudança pendente (backup real criado, conteúdo conferido via `git show`); restaurar pro estado
+atual (nenhum commit novo, "Already at this version."); `session.lock` travado por um processo
+`flock` externo simulando o Minecraft real (restore bloqueado, mensagem certa, zero commits
+criados; lock liberado, restore volta a funcionar); mundo novo confirmando que `session.lock`
+nunca é rastreado desde o primeiro `git init`.
+
+Detalhes técnicos completos em `ARCHITECTURE.md` §Git Engine (subseção "Restaurar uma
+versão"); checklist atualizado em `PHASE.md` Fase 1.
+
+**Estado ao final da sessão**: o ciclo básico do Git Engine está completo — ativar/desativar,
+criar snapshot, ver histórico e restaurar, todos implementados e verificados ao vivo. Itens
+restantes da Fase 1: "Deletar uma versão" (nunca silencioso), "GUI básica" da tela inicial,
+"Modo Básico/Avançado", CLI opcional em paralelo. Game Runner e login Microsoft seguem
+pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não
+urgente.

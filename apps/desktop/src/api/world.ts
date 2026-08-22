@@ -32,3 +32,13 @@ export type Snapshot = { hash: string; date: string; message: string };
 export function listWorldHistory(instanceId: number, folderName: string): Promise<Snapshot[]> {
   return invoke("list_world_history", { instanceId, folderName });
 }
+
+export type RestoreResult = { backup_created: boolean; restored: boolean };
+
+export function restoreWorldVersion(
+  instanceId: number,
+  folderName: string,
+  commitHash: string,
+): Promise<RestoreResult> {
+  return invoke("restore_world_version", { instanceId, folderName, commitHash });
+}

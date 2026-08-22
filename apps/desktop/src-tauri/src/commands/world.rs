@@ -173,3 +173,38 @@ pub async fn list_world_history(
         })
         .collect())
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RestoreDto {
+    pub backup_created: bool,
+    pub restored: bool,
+}
+
+/// Restores a world to an older snapshot. Never destructive: a backup
+/// snapshot of the current state is always taken first, and bringing the
+/// files back is itself recorded as a new snapshot, never a history rewrite.
+/// Refuses if the world looks currently open in Minecraft.
+#[tauri::command]
+pub async fn restore_world_version(
+    instance_id: i64,
+    folder_name: String,
+    commit_hash: String,
+    state: State<'_, AppState>,
+) -> Result<RestoreDto, String> {
+    let instances_dir = state.instances_dir.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::restore(&world_dir, &commit_hash)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(RestoreDto {
+        backup_created: matches!(outcome.backup, mcgit_core::git::CommitOutcome::Created(_)),
+        restored: matches!(outcome.restore, mcgit_core::git::CommitOutcome::Created(_)),
+    })
+}

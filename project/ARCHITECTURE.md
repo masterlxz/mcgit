@@ -371,6 +371,70 @@ num mundo versionado sem nenhum snapshot; 1 snapshot aparece com hash/data/mensa
 2º e 3º snapshots aparecem na ordem certa (mais recente primeiro); salvar um snapshot com o
 painel já aberto atualiza a lista sozinho, sem precisar fechar/reabrir.
 
+### Restaurar uma versão — implementado (Sessão 6, 2026-08-22)
+
+Última peça do ciclo básico do Git Engine (ativar → snapshot → histórico → **restaurar**). O
+`CONTEXT.md` já especificava dois requisitos de segurança antes desta sessão (seção "Snapshot /
+History / Restore" + "Security Requirements"): checagem de mundo aberto ("when possible") e
+checkpoint de segurança antes de restaurar ("non-negotiable"). Os dois foram fechados de
+verdade, não adiados.
+
+- **Nunca destrutivo**: `restore()` não é um `git reset --hard` (que rebobinaria o histórico e
+  tornaria commits mais novos órfãos). Em vez disso: `git checkout <hash> -- .` traz os
+  arquivos de volta ao estado antigo (atualiza working tree **e** index), e isso é gravado como
+  um commit novo em cima do histórico existente — nada é apagado, o próprio restore é sempre
+  desfazível restaurando de novo.
+- **Checagem de mundo aberto, implementada agora** (decisão confirmada com o usuário: não
+  adiar pro Game Runner). Minecraft trava um lock exclusivo em `session.lock` dentro da pasta
+  do mundo enquanto ele está carregado — `is_currently_open()` tenta adquirir esse mesmo lock
+  (`std::fs::File::try_lock`/`unlock`, API nativa do Rust estabilizada recentemente — **zero
+  dependência nova**, nem precisou do `fs4` cogitado no planejamento) e trata "não consegui
+  travar" como "mundo aberto". Se o arquivo nem existe ainda (mundo nunca aberto), retorna
+  "não aberto" direto, sem tentar nada.
+- **Checkpoint de segurança + restauração, ambos via `commit()` já existente**:
+  `restore(world_dir, commit_hash)` primeiro salva o que estiver pendente (`commit(world_dir,
+  "Backup before restoring")` — `NothingToCommit` se já estava tudo salvo, não é problema),
+  depois faz o checkout e commita o resultado (`commit(world_dir, "Restored to <hash curto>")`
+  — também pode ser `NothingToCommit`, se restaurar pro estado em que já estava). `RestoreOutcome
+  { backup, restore }` carrega os dois `CommitOutcome`.
+- **`RestoreError`** (novo, em `types.rs`): `WorldCurrentlyOpen` (não é um erro de Git, por
+  isso não vive em `GitError`), mais `Git`/`Io` via `#[from]` pra propagar os erros de baixo
+  sem boilerplate.
+- **Testes** (`mcgit-core`): restaurar traz o conteúdo antigo de volta e cria um commit;
+  restaurar com mudança pendente faz backup primeiro; restaurar pro estado atual não cria
+  nenhum commit novo; hash inválido propaga erro; `session.lock` travado por outro `File` no
+  próprio teste (simulando o Minecraft real) bloqueia o restore sem alterar nada. 16/16 testes
+  verdes no crate.
+- **Ponte Tauri**: `restore_world_version` (mesmo formato dos outros comandos de mundo) +
+  `RestoreDto { backup_created, restored }`.
+- **UI**: confirmação **inline** por snapshot em `WorldHistory.tsx` (não um modal, mantendo a
+  convenção do projeto) — clicar "Restore" mostra o aviso do mockup do `CONTEXT.md` ("This will
+  replace the world's current state.") com "Cancel"/"Create Backup and Restore" na própria
+  linha do snapshot. `InstanceDetailScreen.tsx` monta a mensagem de status a partir do
+  resultado ("Created a backup and restored to `<hash>`." / "Restored to `<hash>`." / "Already
+  at this version.") e recarrega o histórico daquele mundo (mesmo padrão de auto-refresh da
+  feature anterior).
+- **Achado real durante a verificação ao vivo**: o próprio `session.lock` (criado pra checagem
+  de mundo aberto) estava sendo pego pelo `git add -A` do `commit()` e virando um arquivo
+  rastreado — não quebra o restore, mas suja o histórico com ruído de um arquivo transitório.
+  Primeira tentativa de correção (um `.gitignore` rastreado, commitado automaticamente no
+  `git init`) criava um problema pior: uma entrada "Start versioning this world" aparecendo na
+  timeline do jogador como se fosse um snapshot real, contrariando o próprio princípio "timeline
+  amigável, não ruído de sistema". Correção final: `.git/info/exclude` (mecanismo nativo do Git
+  pra exclusões só-locais) — nunca precisa de commit, então um mundo recém-versionado continua
+  com histórico zerado até o jogador salvar de verdade, exatamente como antes.
+
+**Validado ao vivo pela GUI real** (mesma técnica de sempre, dois mundos fake diferentes —
+um reaproveitado de sessões anteriores, outro criado do zero pra confirmar a exclusão do
+`session.lock` desde o primeiro `git init`): 3 snapshots criados, restaurar pro mais antigo
+(sem mudança pendente → sem backup, só o commit de restore) confirmado por conteúdo de arquivo
+e `git log` reais; restaurar de novo com uma mudança pendente no meio (→ backup real, conteúdo
+do backup conferido via `git show`); restaurar pro estado atual → nenhum commit novo,
+"Already at this version."; `session.lock` travado por um processo `flock` externo simulando o
+Minecraft real → restore bloqueado com a mensagem certa, zero commits criados, liberado o lock
+→ restore volta a funcionar; mundo novo confirmando que `session.lock` nunca é rastreado mesmo
+existindo no disco no momento do snapshot.
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

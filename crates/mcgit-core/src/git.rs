@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::types::GitError;
+use crate::types::{GitError, RestoreError};
 
 /// Runs `git <args>` in `world_dir`, mapping a failed spawn or a non-zero
 /// exit code to `GitError`. Every function in this module that shells out
@@ -28,6 +28,31 @@ fn run(world_dir: &Path, args: &[&str]) -> Result<std::process::Output, GitError
 /// so callers don't need to check `is_repository` first.
 pub fn init(world_dir: &Path) -> Result<(), GitError> {
     run(world_dir, &["init"])?;
+    exclude_session_lock(world_dir)?;
+    Ok(())
+}
+
+/// Makes sure `session.lock` is never versioned: it's a transient file
+/// Minecraft (and `is_currently_open`) uses to detect an open world, not
+/// part of the world's actual content, so it shouldn't show up as noise in
+/// every snapshot the player takes while playing. Written to
+/// `.git/info/exclude` rather than a tracked `.gitignore` — Git's own
+/// mechanism for local-only ignore rules, so it never needs a commit of
+/// its own and a freshly versioned world still looks untouched until the
+/// player saves their own first snapshot.
+fn exclude_session_lock(world_dir: &Path) -> Result<(), GitError> {
+    let path = world_dir.join(".git").join("info").join("exclude");
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    if existing.lines().any(|line| line == "session.lock") {
+        return Ok(());
+    }
+
+    let mut updated = existing;
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str("session.lock\n");
+    std::fs::write(&path, updated)?;
     Ok(())
 }
 
@@ -111,6 +136,58 @@ pub fn log(world_dir: &Path) -> Result<Vec<Snapshot>, GitError> {
         .collect())
 }
 
+/// Whether `world_dir` looks like it's currently loaded in a Minecraft
+/// client. Mirrors what the game itself does: while a world is open, it
+/// holds an exclusive OS-level lock on `session.lock` inside the world
+/// folder. If the file doesn't exist yet, the world was never opened, so
+/// it can't be locked.
+fn is_currently_open(world_dir: &Path) -> std::io::Result<bool> {
+    let lock_path = world_dir.join("session.lock");
+    if !lock_path.is_file() {
+        return Ok(false);
+    }
+
+    let file = std::fs::OpenOptions::new().write(true).open(&lock_path)?;
+    match file.try_lock() {
+        Ok(()) => {
+            file.unlock()?;
+            Ok(false)
+        }
+        Err(std::fs::TryLockError::WouldBlock) => Ok(true),
+        Err(std::fs::TryLockError::Error(e)) => Err(e),
+    }
+}
+
+/// Outcome of a restore: whether the pre-restore safety checkpoint actually
+/// created a commit, and whether bringing the files back to `commit_hash`
+/// resulted in a new commit (it won't if the world was already in that
+/// exact state).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestoreOutcome {
+    pub backup: CommitOutcome,
+    pub restore: CommitOutcome,
+}
+
+/// Restores `world_dir` to the state it had at `commit_hash`. Never
+/// destructive: it never rewrites or discards history. Instead it (1)
+/// refuses if the world looks currently open in Minecraft, (2) saves
+/// whatever's pending right now as a backup snapshot, (3) brings the files
+/// back to the old state, and (4) records that as a new snapshot on top —
+/// so restoring is itself always undoable by restoring again.
+pub fn restore(world_dir: &Path, commit_hash: &str) -> Result<RestoreOutcome, RestoreError> {
+    if is_currently_open(world_dir)? {
+        return Err(RestoreError::WorldCurrentlyOpen);
+    }
+
+    let backup = commit(world_dir, "Backup before restoring")?;
+    run(world_dir, &["checkout", commit_hash, "--", "."])?;
+
+    let short = &commit_hash[..commit_hash.len().min(7)];
+    let restore = commit(world_dir, &format!("Restored to {short}"))?;
+
+    Ok(RestoreOutcome { backup, restore })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +229,31 @@ mod tests {
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert!(second.is_ok());
+    }
+
+    #[test]
+    fn init_ignores_session_lock() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-init-gitignore-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        init(&world_dir).unwrap(); // idempotent: no duplicate lines
+
+        let exclude = std::fs::read_to_string(world_dir.join(".git").join("info").join("exclude")).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
+        std::fs::write(world_dir.join("session.lock"), b"").unwrap();
+        let outcome = commit(&world_dir, "First snapshot").unwrap();
+        let tracked = Command::new("git")
+            .args(["ls-files"])
+            .current_dir(&world_dir)
+            .output()
+            .unwrap();
+        let tracked_files = String::from_utf8_lossy(&tracked.stdout).into_owned();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(exclude.matches("session.lock").count(), 1);
+        assert!(!tracked_files.contains("session.lock"));
+        assert!(tracked_files.contains("level.dat"));
+        assert!(matches!(outcome, CommitOutcome::Created(_)));
     }
 
     #[test]
@@ -251,5 +353,117 @@ mod tests {
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].message, "Second snapshot");
         assert_eq!(history[1].message, "First snapshot");
+    }
+
+    #[test]
+    fn restore_brings_back_old_content_and_creates_a_new_commit() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-restore-basic-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
+        let first = commit(&world_dir, "First snapshot").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"v2").unwrap();
+        commit(&world_dir, "Second snapshot").unwrap();
+
+        let first_hash = match first {
+            CommitOutcome::Created(hash) => hash,
+            CommitOutcome::NothingToCommit => panic!("expected a commit"),
+        };
+        let outcome = restore(&world_dir, &first_hash).unwrap();
+
+        let content = std::fs::read(world_dir.join("level.dat")).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(content, b"v1");
+        assert_eq!(outcome.backup, CommitOutcome::NothingToCommit);
+        match outcome.restore {
+            CommitOutcome::Created(_) => {}
+            CommitOutcome::NothingToCommit => panic!("expected a restore commit"),
+        }
+    }
+
+    #[test]
+    fn restore_backs_up_pending_changes_first() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-restore-backup-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
+        let first = commit(&world_dir, "First snapshot").unwrap();
+        let first_hash = match first {
+            CommitOutcome::Created(hash) => hash,
+            CommitOutcome::NothingToCommit => panic!("expected a commit"),
+        };
+        // Pending, never-saved change.
+        std::fs::write(world_dir.join("level.dat"), b"uncommitted").unwrap();
+
+        let outcome = restore(&world_dir, &first_hash).unwrap();
+
+        let history = log(&world_dir).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        match outcome.backup {
+            CommitOutcome::Created(_) => {}
+            CommitOutcome::NothingToCommit => panic!("expected the pending change to be backed up"),
+        }
+        assert_eq!(history.len(), 3); // first snapshot, backup, restore
+        assert!(history[0].message.starts_with("Restored to "));
+        assert_eq!(history[1].message, "Backup before restoring");
+        assert_eq!(history[2].message, "First snapshot");
+    }
+
+    #[test]
+    fn restore_to_current_state_creates_no_new_commits() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-restore-noop-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
+        let first = commit(&world_dir, "First snapshot").unwrap();
+        let first_hash = match first {
+            CommitOutcome::Created(hash) => hash,
+            CommitOutcome::NothingToCommit => panic!("expected a commit"),
+        };
+
+        let outcome = restore(&world_dir, &first_hash).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(outcome.backup, CommitOutcome::NothingToCommit);
+        assert_eq!(outcome.restore, CommitOutcome::NothingToCommit);
+    }
+
+    #[test]
+    fn restore_fails_with_invalid_hash() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-restore-bad-hash-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
+        commit(&world_dir, "First snapshot").unwrap();
+
+        let result = restore(&world_dir, "0000000000000000000000000000000000000");
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(matches!(result, Err(RestoreError::Git(_))));
+    }
+
+    #[test]
+    fn restore_refuses_when_world_is_locked() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-restore-locked-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
+        let first = commit(&world_dir, "First snapshot").unwrap();
+        let first_hash = match first {
+            CommitOutcome::Created(hash) => hash,
+            CommitOutcome::NothingToCommit => panic!("expected a commit"),
+        };
+
+        // Simulate Minecraft having the world open, same as the real game does.
+        let lock_file = std::fs::File::create(world_dir.join("session.lock")).unwrap();
+        lock_file.lock().unwrap();
+
+        let result = restore(&world_dir, &first_hash);
+        let history_len = log(&world_dir).unwrap().len();
+
+        drop(lock_file);
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(matches!(result, Err(RestoreError::WorldCurrentlyOpen)));
+        assert_eq!(history_len, 1, "restore must not touch history when the world is open");
     }
 }

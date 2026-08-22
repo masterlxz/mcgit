@@ -177,7 +177,24 @@ em paralelo, opcional. Absorve o que era "Fase 1 — MVP local" do mcgit-ferrame
   histórico vazio, 1 snapshot, ordem correta com 3 snapshots, atualização automática após
   salvar, e ausência do botão num mundo nunca versionado. Detalhes completos em
   `ARCHITECTURE.md` §Git Engine.
-- [ ] Restaurar uma versão (equivalente a `mcgit restore`) — checagem de mundo aberto, checkpoint de segurança antes de restaurar
+- [x] Restaurar uma versão (equivalente a `mcgit restore`) — checagem de mundo aberto,
+  checkpoint de segurança antes de restaurar, implementado (Sessão 6, 2026-08-22). Fecha os
+  dois requisitos de segurança já documentados no `CONTEXT.md`: checagem de mundo aberto
+  (implementada de verdade, não adiada — `mcgit-core::git::restore()` tenta adquirir o mesmo
+  lock exclusivo de `session.lock` que o próprio Minecraft usa, via `std::fs::File::try_lock`
+  nativo do Rust, sem dependência nova) e checkpoint de segurança não-negociável (sempre salva
+  o estado atual antes de restaurar, reaproveitando `commit()`). Nunca é destrutivo: restaurar
+  é `git checkout <hash> -- .` seguido de um novo commit "Restored to `<hash>`" — nunca um
+  `reset --hard`, então nenhum commit é perdido e o próprio restore é sempre desfazível
+  restaurando de novo. Comando Tauri `restore_world_version`; confirmação inline por
+  snapshot ("Restore" → aviso + "Cancel"/"Create Backup and Restore", inspirado no mockup do
+  `CONTEXT.md`, sem introduzir modal). **Achado e corrigido durante a verificação ao vivo**: o
+  próprio `session.lock` (usado pela checagem de mundo aberto) estava sendo versionado junto
+  pelo `git add -A` do `commit()` — corrigido fazendo `git init` escrever
+  `session.lock` em `.git/info/exclude` (mecanismo nativo do Git pra exclusões só-locais, que
+  nunca precisa virar commit — ao contrário de um `.gitignore` rastreado, não cria uma entrada
+  falsa na timeline do jogador). Verificado ao vivo pela GUI real. Detalhes completos em
+  `ARCHITECTURE.md` §Git Engine.
 - [ ] Deletar uma versão (nunca silencioso, sempre com confirmação)
 - [ ] GUI básica: tela inicial com lista de instâncias + botão "Jogar" (mockup em `CONTEXT.md`)
 - [ ] Modo Básico/Avançado: avançado expõe Git (commits/branches/remotes/diff) — básico não
