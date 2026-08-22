@@ -195,7 +195,25 @@ em paralelo, opcional. Absorve o que era "Fase 1 — MVP local" do mcgit-ferrame
   nunca precisa virar commit — ao contrário de um `.gitignore` rastreado, não cria uma entrada
   falsa na timeline do jogador). Verificado ao vivo pela GUI real. Detalhes completos em
   `ARCHITECTURE.md` §Git Engine.
-- [ ] Deletar uma versão (nunca silencioso, sempre com confirmação)
+- [x] Deletar uma versão (nunca silencioso, sempre com confirmação), implementado (Sessão 7,
+  2026-08-22). Fecha o ciclo básico do Git Engine (ativar → snapshot → histórico → restaurar →
+  **deletar**) e é a primeira operação de verdade destrutiva da Fase 1. Nunca usa
+  `git rebase`/`filter-branch` (risco real de conflito em arquivos binários de mundo, o mesmo
+  que o `PHASE.md` já registra como não resolvido na Fase 6 — Branching): `delete_snapshot()`
+  religa os ponteiros de pai dos commits sobreviventes direto com `git commit-tree`,
+  reaproveitando a árvore de arquivos exata que cada um já tinha (um commit já é uma foto
+  completa, não um diff) — nunca pede ao Git pra reconciliar nada, então nunca há conflito
+  possível, mesmo em binário. Datas originais preservadas via `GIT_AUTHOR_DATE`/
+  `GIT_COMMITTER_DATE`, então snapshots sobreviventes não mudam de data na timeline só porque
+  um outro foi deletado. Cobre os 4 casos possíveis (commit do meio, topo/mais recente, raiz
+  com descendentes, único commit existente) — os 4 validados manualmente num repositório Git
+  descartável **antes** de virar código, e depois cobertos por testes reais. Mesma checagem de
+  mundo aberto (`is_currently_open`) do `restore()`. Comando Tauri `delete_world_snapshot`;
+  confirmação inline por snapshot (nunca modal), com **dois avisos diferentes** confirmados
+  com o usuário: deletar o mais recente é permitido mas avisa que também reseta os arquivos do
+  mundo (e um terceiro texto, achado durante a verificação, pro caso de ser o único snapshot
+  existente, já que aí não há "estado anterior" nenhum pra voltar). Verificado ao vivo pela GUI
+  real. Detalhes completos em `ARCHITECTURE.md` §Git Engine.
 - [ ] GUI básica: tela inicial com lista de instâncias + botão "Jogar" (mockup em `CONTEXT.md`)
 - [ ] Modo Básico/Avançado: avançado expõe Git (commits/branches/remotes/diff) — básico não
 - [ ] CLI em paralelo (opcional): `mcgit init/snapshot/snapshots/restore/delete`, `mcgit create/launch`

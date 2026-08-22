@@ -636,3 +636,56 @@ restantes da Fase 1: "Deletar uma versão" (nunca silencioso), "GUI básica" da 
 "Modo Básico/Avançado", CLI opcional em paralelo. Game Runner e login Microsoft seguem
 pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não
 urgente.
+
+---
+
+## Sessão 7 — 2026-08-22 — Fase 1: Deletar uma versão
+
+Fecha o ciclo básico do Git Engine (ativar → snapshot → histórico → restaurar →
+**deletar**) — a primeira operação de verdade destrutiva da Fase 1. `CONTEXT.md` já exigia
+"never silently delete a snapshot; confirm destructive operations".
+
+O risco óbvio seria usar `git rebase`/`filter-branch` pra remover um commit do meio — mas isso
+recalcula e reaplica diffs, o mesmo tipo de risco que o próprio `PHASE.md` (Fase 6 —
+Branching) já registra como não validado pra arquivos binários de mundo. Em vez disso: um
+commit do Git já é uma foto completa dos arquivos (não um diff), então "deletar um commit" é
+só religar o ponteiro de pai dos commits seguintes, reconstruindo cada um com
+`git commit-tree` reaproveitando a MESMA árvore que ele já tinha — nunca há reconciliação, nunca
+há conflito possível. **Essa técnica foi validada manualmente num repositório Git descartável
+antes de virar código** (não só pensada em teoria), cobrindo os 4 casos possíveis: commit do
+meio, mais recente/topo, raiz com descendentes, e único commit existente.
+
+- **`mcgit-core::git::delete_snapshot()`**: implementa os 4 casos acima; preserva as datas
+  originais dos commits sobreviventes via `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` (só o hash
+  muda, nunca a data mostrada ao jogador); mesma checagem de mundo aberto (`is_currently_open`)
+  do `restore()`. Novo `DeleteError`. 6 testes novos, 22/22 verdes no crate.
+- **Ponte Tauri**: `delete_world_snapshot`.
+- **UI**: botão "Delete" ao lado do "Restore" em `WorldHistory.tsx`, confirmação inline (nunca
+  modal). Decisão confirmada com o usuário: deletar o snapshot mais recente é permitido, com um
+  aviso diferente (avisa que também reseta os arquivos do mundo) — não fica restrito a
+  snapshots antigos.
+
+**Achado real durante a verificação ao vivo**: o aviso de "deletar o mais recente" ficava
+impreciso quando esse snapshot era o único que existia (dizia "reset pro estado anterior", mas
+não há "anterior" nesse caso) — corrigido com um terceiro texto específico só pra esse caso.
+
+Implementado em incrementos de modo ensino (explicando por que rebase/merge é arriscado em
+binário e como reaproveitar a árvore original evita isso por completo, antes do código;
+depois o padrão de duas confirmações diferentes no mesmo componente React), cada um com seu
+checkpoint de build/teste.
+
+**Verificado ao vivo pela GUI real** (mesma técnica de sempre — `GDK_BACKEND=x11` + `xdotool` +
+`spectacle`; mundos fake criados/removidos ao final): 3 snapshots criados; deletar o do meio
+(conteúdo e data do snapshot seguinte confirmados intocados); deletar o mais recente (aviso
+específico, arquivo revertido de verdade pro snapshot anterior); deletar o único snapshot
+restante ("No snapshots yet." depois); `session.lock` travado por `flock` externo bloqueando o
+delete (histórico intacto), liberado o lock e confirmado que volta a funcionar.
+
+Detalhes técnicos completos em `ARCHITECTURE.md` §Git Engine (subseção "Deletar uma versão");
+checklist atualizado em `PHASE.md` Fase 1.
+
+**Estado ao final da sessão**: o ciclo básico completo do Git Engine está pronto — ativar/
+desativar, criar snapshot, ver histórico, restaurar e deletar, todos implementados e
+verificados ao vivo. Itens restantes da Fase 1: "GUI básica" da tela inicial, "Modo Básico/
+Avançado", CLI opcional em paralelo. Game Runner e login Microsoft seguem pausados/bloqueados
+por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não urgente.

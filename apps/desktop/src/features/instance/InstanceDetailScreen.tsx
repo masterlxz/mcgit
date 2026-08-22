@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { listInstances, type Instance } from "../../api/instance";
 import {
   createWorldSnapshot,
+  deleteWorldSnapshot,
   disableWorldVersioning,
   enableWorldVersioning,
   listWorldHistory,
@@ -99,6 +100,18 @@ export function InstanceDetailScreen() {
     }
   }
 
+  async function handleDelete(folderName: string, hash: string) {
+    setError(null);
+    setStatus(null);
+    try {
+      await deleteWorldSnapshot(instanceId, folderName, hash);
+      setStatus(`Deleted snapshot ${hash.slice(0, 7)}.`);
+      await handleShowHistory(folderName);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   return (
     <section>
       <p>
@@ -116,6 +129,7 @@ export function InstanceDetailScreen() {
         onSaveSnapshot={handleSaveSnapshot}
         onShowHistory={handleShowHistory}
         onRestore={handleRestore}
+        onDelete={handleDelete}
       />
     </section>
   );

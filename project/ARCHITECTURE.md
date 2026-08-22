@@ -435,6 +435,62 @@ Minecraft real → restore bloqueado com a mensagem certa, zero commits criados,
 → restore volta a funcionar; mundo novo confirmando que `session.lock` nunca é rastreado mesmo
 existindo no disco no momento do snapshot.
 
+### Deletar uma versão — implementado (Sessão 7, 2026-08-22)
+
+Fecha o ciclo básico do Git Engine (ativar → snapshot → histórico → restaurar →
+**deletar**). Ao contrário de tudo que veio antes, esta é a primeira operação de verdade
+destrutiva: o snapshot deletado deixa de existir.
+
+- **Por que não `git rebase`/`filter-branch`**: essas ferramentas recalculam e reaplicam o
+  *diff* de cada commit sobre uma nova base — exatamente o tipo de operação que o próprio
+  `PHASE.md` (Fase 6 — Branching) já registra como não validado como seguro pra arquivos
+  binários de mundo ("não assumir que merge é seguro"). `delete_snapshot()` evita esse risco
+  por completo com uma técnica diferente: um commit do Git já é uma **foto completa** dos
+  arquivos (a "árvore"), não um delta — então "deletar" um commit do meio da cadeia é só
+  religar o ponteiro de pai dos commits seguintes direto pro commit anterior ao deletado,
+  reconstruindo cada um com `git commit-tree` reaproveitando a MESMA árvore que ele já tinha.
+  Nunca se pergunta ao Git "como resolver essa mudança" — não há diff, não há merge, não há
+  conflito possível, nem em binário.
+- **Validado manualmente antes de virar código**: nesta sessão, os 4 casos abaixo foram
+  testados na mão num repositório Git descartável (não só pensados em teoria) antes de
+  qualquer linha de Rust ser escrita:
+  1. **Commit do meio** (A→B→C, deletar B): vira A→C, C reconstruído com a mesma árvore/data/
+     mensagem (hash novo, porque o pai mudou), arquivos no disco intocados.
+  2. **Commit mais recente/topo**: precisa de `git reset --hard` no final pra atualizar os
+     arquivos de verdade — é o único caso que muda algo no disco.
+  3. **Raiz com descendentes**: o primeiro descendente vira uma nova raiz (`commit-tree` sem
+     `-p`), resto da cadeia intacto.
+  4. **Único commit existente** (raiz e topo ao mesmo tempo): `git update-ref -d` remove a
+     referência do branch — o repo volta pro mesmo estado de "inicializado, zero commits" que
+     `log()` já trata (mesma mensagem "does not have any commits yet" do Git), arquivos no
+     disco ficam como estão.
+- **Datas preservadas**: cada `commit-tree` roda com `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`
+  setados pro valor original daquele commit — um snapshot sobrevivente nunca muda de data na
+  timeline só porque um outro foi deletado em algum ponto da cadeia.
+- **Mesma checagem de mundo aberto** (`is_currently_open`, já existente) do `restore()`,
+  aplicada antes de qualquer coisa.
+- **`DeleteError`** (novo, em `types.rs`): mesmo formato do `RestoreError`
+  (`WorldCurrentlyOpen` + `Git`/`Io` via `#[from]`).
+- **Testes** (`mcgit-core`): os 4 casos acima, mais mundo travado e hash inválido. 22/22
+  verdes no crate.
+- **Ponte Tauri**: `delete_world_snapshot` (mesmo formato dos outros comandos de mundo,
+  retorna só sucesso/erro — não há ambiguidade de resultado como em `restore`).
+- **UI**: botão "Delete" ao lado do "Restore" em `WorldHistory.tsx`, confirmação inline (nunca
+  modal). Decisão confirmada com o usuário: deletar o snapshot mais recente **é permitido**
+  (não fica restrito a snapshots antigos), mas com aviso diferente, já que também reseta os
+  arquivos do mundo. **Achado durante a verificação ao vivo**: esse aviso ("...reset pro estado
+  do snapshot anterior") ficava impreciso quando o snapshot deletado era o único que existia —
+  não há "anterior" nesse caso. Corrigido com um terceiro texto específico ("This is your only
+  snapshot. Deleting it removes all version history for this world (your current files won't
+  be touched).").
+
+**Validado ao vivo pela GUI real** (mesma técnica de sempre): 3 snapshots criados; deletar o
+do meio (conteúdo e data do snapshot seguinte confirmados intocados); deletar o mais recente
+(aviso específico confirmado, conteúdo do arquivo revertido de verdade pro snapshot anterior);
+deletar o único snapshot restante ("No snapshots yet." depois, aviso de "único snapshot"
+confirmado antes); `session.lock` travado por `flock` externo → delete bloqueado, histórico
+intacto, liberado o lock → delete volta a funcionar.
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

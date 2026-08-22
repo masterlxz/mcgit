@@ -208,3 +208,27 @@ pub async fn restore_world_version(
         restored: matches!(outcome.restore, mcgit_core::git::CommitOutcome::Created(_)),
     })
 }
+
+/// Deletes a snapshot from a world's history. The only truly destructive
+/// world command — never silent, the UI always confirms before calling this.
+#[tauri::command]
+pub async fn delete_world_snapshot(
+    instance_id: i64,
+    folder_name: String,
+    commit_hash: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let instances_dir = state.instances_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::delete_snapshot(&world_dir, &commit_hash)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}

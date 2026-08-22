@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::types::{GitError, RestoreError};
+use crate::types::{DeleteError, GitError, RestoreError};
 
 /// Runs `git <args>` in `world_dir`, mapping a failed spawn or a non-zero
 /// exit code to `GitError`. Every function in this module that shells out
@@ -186,6 +186,124 @@ pub fn restore(world_dir: &Path, commit_hash: &str) -> Result<RestoreOutcome, Re
     let restore = commit(world_dir, &format!("Restored to {short}"))?;
 
     Ok(RestoreOutcome { backup, restore })
+}
+
+fn trimmed_stdout(output: std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+/// A commit's full tree state and metadata, as needed to recreate it
+/// unchanged under a different parent.
+struct Descendant {
+    tree: String,
+    author_date: String,
+    committer_date: String,
+    message: String,
+}
+
+/// Creates a new commit that reuses `tree` exactly (same file content as
+/// whatever commit it was copied from) under `parent` (or no parent at
+/// all, for a new root), preserving the original author/committer dates so
+/// a surviving snapshot's date in the timeline never shifts just because
+/// an unrelated one was deleted.
+fn commit_tree_with_dates(
+    world_dir: &Path,
+    tree: &str,
+    parent: Option<&str>,
+    message: &str,
+    author_date: &str,
+    committer_date: &str,
+) -> Result<String, GitError> {
+    let mut args: Vec<&str> = vec!["commit-tree", tree];
+    if let Some(parent) = parent {
+        args.push("-p");
+        args.push(parent);
+    }
+    args.push("-m");
+    args.push(message);
+
+    let output = Command::new("git")
+        .args(&args)
+        .current_dir(world_dir)
+        .env("GIT_AUTHOR_DATE", author_date)
+        .env("GIT_COMMITTER_DATE", committer_date)
+        .output()
+        .map_err(|e| GitError::Spawn(e.to_string()))?;
+
+    if !output.status.success() {
+        return Err(GitError::CommandFailed(
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        ));
+    }
+
+    Ok(trimmed_stdout(output))
+}
+
+/// Deletes `commit_hash` from `world_dir`'s history — the only truly
+/// destructive operation in the Git Engine. Never uses `rebase`/`merge`:
+/// every surviving commit after the deleted one is rebuilt with
+/// `git commit-tree`, reusing its exact original tree (a commit is a full
+/// snapshot, not a diff), so there is nothing for Git to reconcile and no
+/// conflict is possible even for binary world files. If the deleted commit
+/// was the current tip, the world's files are reset to match the new tip.
+pub fn delete_snapshot(world_dir: &Path, commit_hash: &str) -> Result<(), DeleteError> {
+    if is_currently_open(world_dir)? {
+        return Err(DeleteError::WorldCurrentlyOpen);
+    }
+
+    let head = trimmed_stdout(run(world_dir, &["rev-parse", "HEAD"])?);
+    let parent = trimmed_stdout(run(world_dir, &["log", "--format=%P", "-1", commit_hash])?);
+
+    let range = format!("{commit_hash}..HEAD");
+    let descendants_output = run(
+        world_dir,
+        &["log", "--reverse", "--format=%T\x1f%aI\x1f%cI\x1f%s", &range],
+    )?;
+    let descendants: Vec<Descendant> = String::from_utf8_lossy(&descendants_output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.splitn(4, '\x1f');
+            Some(Descendant {
+                tree: fields.next()?.to_string(),
+                author_date: fields.next()?.to_string(),
+                committer_date: fields.next()?.to_string(),
+                message: fields.next()?.to_string(),
+            })
+        })
+        .collect();
+
+    let mut new_parent = if parent.is_empty() { None } else { Some(parent) };
+    for d in &descendants {
+        let tip = commit_tree_with_dates(
+            world_dir,
+            &d.tree,
+            new_parent.as_deref(),
+            &d.message,
+            &d.author_date,
+            &d.committer_date,
+        )?;
+        new_parent = Some(tip);
+    }
+
+    let branch = trimmed_stdout(run(world_dir, &["rev-parse", "--abbrev-ref", "HEAD"])?);
+    let ref_name = format!("refs/heads/{branch}");
+    match &new_parent {
+        Some(tip) => {
+            run(world_dir, &["update-ref", &ref_name, tip])?;
+        }
+        None => {
+            run(world_dir, &["update-ref", "-d", &ref_name])?;
+        }
+    }
+
+    // The tree at HEAD only actually changes if the deleted commit was the
+    // tip itself — every other case leaves HEAD's own tree untouched, so
+    // the working directory already matches reality.
+    if commit_hash == head && new_parent.is_some() {
+        run(world_dir, &["reset", "--hard"])?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -465,5 +583,146 @@ mod tests {
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert!(matches!(result, Err(RestoreError::WorldCurrentlyOpen)));
         assert_eq!(history_len, 1, "restore must not touch history when the world is open");
+    }
+
+    #[test]
+    fn delete_middle_commit_preserves_descendant_content_and_date() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-delete-middle-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        commit(&world_dir, "A").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"b").unwrap();
+        let b = match commit(&world_dir, "B").unwrap() {
+            CommitOutcome::Created(hash) => hash,
+            CommitOutcome::NothingToCommit => panic!("expected a commit"),
+        };
+        std::fs::write(world_dir.join("level.dat"), b"c").unwrap();
+        commit(&world_dir, "C").unwrap();
+
+        let before = log(&world_dir).unwrap();
+        let c_date_before = before[0].date.clone();
+
+        delete_snapshot(&world_dir, &b).unwrap();
+
+        let after = log(&world_dir).unwrap();
+        let content = std::fs::read(world_dir.join("level.dat")).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+
+        assert_eq!(after.len(), 2);
+        assert_eq!(after[0].message, "C");
+        assert_eq!(after[0].date, c_date_before, "surviving commit's date must not shift");
+        assert_eq!(after[1].message, "A");
+        assert_eq!(content, b"c", "working directory must stay untouched");
+    }
+
+    #[test]
+    fn delete_tip_resets_world_files() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-delete-tip-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        commit(&world_dir, "A").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"b").unwrap();
+        let b = match commit(&world_dir, "B").unwrap() {
+            CommitOutcome::Created(hash) => hash,
+            CommitOutcome::NothingToCommit => panic!("expected a commit"),
+        };
+
+        delete_snapshot(&world_dir, &b).unwrap();
+
+        let history = log(&world_dir).unwrap();
+        let content = std::fs::read(world_dir.join("level.dat")).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].message, "A");
+        assert_eq!(content, b"a", "deleting the tip must reset files to the new tip's content");
+    }
+
+    #[test]
+    fn delete_root_with_descendants_creates_new_parentless_root() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-delete-root-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        let a = match commit(&world_dir, "A").unwrap() {
+            CommitOutcome::Created(hash) => hash,
+            CommitOutcome::NothingToCommit => panic!("expected a commit"),
+        };
+        std::fs::write(world_dir.join("level.dat"), b"b").unwrap();
+        commit(&world_dir, "B").unwrap();
+
+        delete_snapshot(&world_dir, &a).unwrap();
+
+        let history = log(&world_dir).unwrap();
+        let content = std::fs::read(world_dir.join("level.dat")).unwrap();
+        let parents = run(&world_dir, &["log", "--format=%P", "-1", &history[0].hash]).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].message, "B");
+        assert_eq!(content, b"b");
+        assert!(String::from_utf8_lossy(&parents.stdout).trim().is_empty(), "new root must have no parent");
+    }
+
+    #[test]
+    fn delete_only_commit_leaves_repo_with_empty_history() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-delete-only-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"only").unwrap();
+        let only = match commit(&world_dir, "Only").unwrap() {
+            CommitOutcome::Created(hash) => hash,
+            CommitOutcome::NothingToCommit => panic!("expected a commit"),
+        };
+
+        delete_snapshot(&world_dir, &only).unwrap();
+
+        let history = log(&world_dir).unwrap();
+        let still_a_repo = is_repository(&world_dir);
+        let content = std::fs::read(world_dir.join("level.dat")).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+
+        assert!(history.is_empty());
+        assert!(still_a_repo);
+        assert_eq!(content, b"only", "files on disk are untouched by deleting the only commit");
+    }
+
+    #[test]
+    fn delete_fails_with_invalid_hash() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-delete-bad-hash-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        commit(&world_dir, "A").unwrap();
+
+        let result = delete_snapshot(&world_dir, "0000000000000000000000000000000000000");
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(matches!(result, Err(DeleteError::Git(_))));
+    }
+
+    #[test]
+    fn delete_refuses_when_world_is_locked() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-delete-locked-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        let a = match commit(&world_dir, "A").unwrap() {
+            CommitOutcome::Created(hash) => hash,
+            CommitOutcome::NothingToCommit => panic!("expected a commit"),
+        };
+
+        let lock_file = std::fs::File::create(world_dir.join("session.lock")).unwrap();
+        lock_file.lock().unwrap();
+
+        let result = delete_snapshot(&world_dir, &a);
+        let history_len = log(&world_dir).unwrap().len();
+
+        drop(lock_file);
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(matches!(result, Err(DeleteError::WorldCurrentlyOpen)));
+        assert_eq!(history_len, 1, "delete must not touch history when the world is open");
     }
 }

@@ -19,3 +19,13 @@ pub enum RestoreError {
     #[error("could not check whether the world is open: {0}")]
     Io(#[from] std::io::Error),
 }
+
+#[derive(Debug, Error)]
+pub enum DeleteError {
+    #[error("this world appears to be open in Minecraft right now — close it before deleting a snapshot")]
+    WorldCurrentlyOpen,
+    #[error(transparent)]
+    Git(#[from] GitError),
+    #[error("could not check whether the world is open: {0}")]
+    Io(#[from] std::io::Error),
+}

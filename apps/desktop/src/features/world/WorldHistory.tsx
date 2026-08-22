@@ -4,10 +4,13 @@ import type { Snapshot } from "../../api/world";
 type Props = {
   snapshots: Snapshot[];
   onRestore: (hash: string) => void;
+  onDelete: (hash: string) => void;
 };
 
-export function WorldHistory({ snapshots, onRestore }: Props) {
-  const [confirmingHash, setConfirmingHash] = useState<string | null>(null);
+type Confirming = { hash: string; action: "restore" | "delete" } | null;
+
+export function WorldHistory({ snapshots, onRestore, onDelete }: Props) {
+  const [confirming, setConfirming] = useState<Confirming>(null);
 
   if (snapshots.length === 0) {
     return <p>No snapshots yet.</p>;
@@ -15,28 +18,61 @@ export function WorldHistory({ snapshots, onRestore }: Props) {
 
   return (
     <ul>
-      {snapshots.map((snapshot) => (
-        <li key={snapshot.hash}>
-          <code>{snapshot.hash.slice(0, 7)}</code> — {new Date(snapshot.date).toLocaleString()} —{" "}
-          {snapshot.message}{" "}
-          {confirmingHash === snapshot.hash ? (
-            <>
-              <em>This will replace the world's current state.</em>{" "}
-              <button onClick={() => setConfirmingHash(null)}>Cancel</button>
-              <button
-                onClick={() => {
-                  onRestore(snapshot.hash);
-                  setConfirmingHash(null);
-                }}
-              >
-                Create Backup and Restore
-              </button>
-            </>
-          ) : (
-            <button onClick={() => setConfirmingHash(snapshot.hash)}>Restore</button>
-          )}
-        </li>
-      ))}
+      {snapshots.map((snapshot, index) => {
+        const isTip = index === 0;
+        const isConfirming = confirming?.hash === snapshot.hash ? confirming.action : null;
+
+        return (
+          <li key={snapshot.hash}>
+            <code>{snapshot.hash.slice(0, 7)}</code> — {new Date(snapshot.date).toLocaleString()}{" "}
+            — {snapshot.message}{" "}
+            {isConfirming === "restore" && (
+              <>
+                <em>This will replace the world's current state.</em>{" "}
+                <button onClick={() => setConfirming(null)}>Cancel</button>
+                <button
+                  onClick={() => {
+                    onRestore(snapshot.hash);
+                    setConfirming(null);
+                  }}
+                >
+                  Create Backup and Restore
+                </button>
+              </>
+            )}
+            {isConfirming === "delete" && (
+              <>
+                <em>
+                  {isTip && snapshots.length > 1
+                    ? "This is your most recent snapshot. Deleting it will also reset the world's files to the previous snapshot's state."
+                    : isTip
+                      ? "This is your only snapshot. Deleting it removes all version history for this world (your current files won't be touched)."
+                      : "This will permanently remove this snapshot. This cannot be undone."}
+                </em>{" "}
+                <button onClick={() => setConfirming(null)}>Cancel</button>
+                <button
+                  onClick={() => {
+                    onDelete(snapshot.hash);
+                    setConfirming(null);
+                  }}
+                >
+                  Delete snapshot
+                </button>
+              </>
+            )}
+            {!isConfirming && (
+              <>
+                <button onClick={() => setConfirming({ hash: snapshot.hash, action: "restore" })}>
+                  Restore
+                </button>
+                <button onClick={() => setConfirming({ hash: snapshot.hash, action: "delete" })}>
+                  Delete
+                </button>
+              </>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -42,3 +42,11 @@ export function restoreWorldVersion(
 ): Promise<RestoreResult> {
   return invoke("restore_world_version", { instanceId, folderName, commitHash });
 }
+
+export function deleteWorldSnapshot(
+  instanceId: number,
+  folderName: string,
+  commitHash: string,
+): Promise<void> {
+  return invoke("delete_world_snapshot", { instanceId, folderName, commitHash });
+}

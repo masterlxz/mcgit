@@ -10,6 +10,7 @@ type Props = {
   onSaveSnapshot: (folderName: string, message: string) => void;
   onShowHistory: (folderName: string) => void;
   onRestore: (folderName: string, hash: string) => void;
+  onDelete: (folderName: string, hash: string) => void;
 };
 
 export function WorldList({
@@ -19,6 +20,7 @@ export function WorldList({
   onSaveSnapshot,
   onShowHistory,
   onRestore,
+  onDelete,
 }: Props) {
   const [openHistoryFor, setOpenHistoryFor] = useState<Set<string>>(new Set());
 
@@ -57,6 +59,7 @@ export function WorldList({
                 <WorldHistory
                   snapshots={historyByWorld[world.folder_name] ?? []}
                   onRestore={(hash) => onRestore(world.folder_name, hash)}
+                  onDelete={(hash) => onDelete(world.folder_name, hash)}
                 />
               )}
             </>
