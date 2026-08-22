@@ -274,6 +274,55 @@ binário `git` do sistema via subprocess em vez de `git2`/libgit2.
 Escopo desta sessão é só o `git init` — criar snapshot (`git commit`), ver histórico e restaurar
 ainda não existem (próximos itens da Fase 1, ver `PHASE.md`).
 
+### Criar versão/snapshot — implementado (Sessão 4, 2026-08-22, continuação)
+
+Segundo slice do Git Engine, direto em cima do `git init` acima. Entrega "salvar o estado atual
+do mundo como uma versão", exposto na UI como "Save snapshot" — sem ainda ter "ver histórico"
+nem "restaurar" (próximos itens do checklist, não fechados por essa feature: o hash do commit
+não é escondido em lugar nenhum, e o histórico não é duplicado no SQLite, exatamente pra não
+travar esses dois).
+
+- **`crates/mcgit-core`**: a duplicação de "rodar um comando git e checar erro" (até então só em
+  `init`) virou um helper privado `run(world_dir, args)` — o gatilho pra extrair foi real, não
+  especulativo: `commit()` precisa de 5 invocações novas (`config` x2, `add`, `status`,
+  `commit`, `rev-parse`). Novo enum `CommitOutcome { Created(String), NothingToCommit }` — "nada
+  mudou desde o último snapshot" é tratado como resultado válido, não erro, então a UI consegue
+  mostrar uma mensagem neutra em vez de um erro em vermelho pra uma ação que na verdade funcionou
+  (só não teve o que fazer). Sequência de `commit()`: `ensure_identity` → `git add -A` → `git
+  status --porcelain` (stdout vazio = nada mudou, retorna cedo) → `git commit -m <mensagem>` →
+  `git rev-parse HEAD` (pega o hash, já que `git commit` não devolve isso de um jeito fácil de
+  ler pelo código).
+- **Identidade Git fixa por design**: `ensure_identity` configura `git config --local user.name
+  mcgit` / `user.email mcgit@localhost` antes de todo commit — `--local` sempre ganha de
+  `--global`/`--system` na resolução do próprio Git, então funciona numa máquina que nunca
+  configurou identidade nenhuma (o caso comum: um jogador que nunca usou Git), sem nunca tocar
+  na configuração pessoal do jogador se ele tiver uma. **Verificado ao vivo, não só assumido**:
+  simulado um ambiente sem `HOME`/config global (`env -i HOME=/tmp/inexistente
+  GIT_CONFIG_NOSYSTEM=1 git commit`) — falha sem identidade nenhuma ("Please tell me who you
+  are"), funciona depois de aplicar os mesmos dois `git config --local` que `ensure_identity`
+  roda. Essa identidade vai aparecer literalmente assim (`mcgit <mcgit@localhost>`) no `git log`
+  quando "Modo Avançado" existir — decisão confirmada com o usuário, não assumida.
+- **Sem dependência nova**: `message: &str` nunca chega vazio em `commit()` — `git commit -m ""`
+  falha de propósito ("Aborting commit due to empty commit message"), então quem garante
+  não-vazio é o frontend (`new Date().toLocaleString()`, uma linha de JS), não o Rust. Isso
+  mantém `mcgit-core` só com `thiserror` como dependência, mesmo depois dessa feature.
+- **Testes** (`mcgit-core`, mesmo estilo dos 3 de `init`): commit com mudança real → `Created`
+  com hash de 40 hex chars; commit repetido sem mudança → `NothingToCommit`; repositório
+  recém-`init`ado e vazio → `NothingToCommit` na primeira tentativa. 6/6 testes verdes.
+- **Ponte Tauri**: `SnapshotDto { created, commit_hash }` + `create_world_snapshot`, mesmo
+  formato de `enable_world_versioning` (roda `mcgit_core::git::commit` dentro de
+  `spawn_blocking`). Sem mudança em `AppState`, sem escrita no banco, sem migration.
+- **UI**: `SaveSnapshotForm.tsx` (novo, espelha `AddManualJavaForm.tsx` — inline `<form>`, sem
+  modal) com um campo de texto opcional; se vazio, usa o timestamp como mensagem. Canal de
+  feedback novo em `InstanceDetailScreen.tsx` (`status`, texto normal) separado do `error`
+  (vermelho) — decisão deliberada pra "nada mudou" não parecer uma falha.
+
+**Validado ao vivo pela GUI real** (mundo fake criado manualmente, mesma limitação de sempre —
+Game Runner ainda não existe): habilitar versionamento → `.git` criado → "Save snapshot" com
+mensagem customizada → commit real confirmado via `git log` (autor e mensagem corretos) → "Save
+snapshot" de novo sem mudança → "Nothing changed since the last snapshot." (não erro), nenhum
+commit vazio criado → campo em branco + mudança real → mensagem por timestamp usada de fato.
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

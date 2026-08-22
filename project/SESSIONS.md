@@ -464,3 +464,62 @@ Ativar/desativar versionamento Git implementados e commitados (`4705add`). Próx
 criar versão/snapshot (`git commit` por trás de "Salvar versão" na UI). Login Microsoft e Game
 Runner seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em
 aberto, não urgente.
+
+---
+
+## Sessão 4 (continuação) — 2026-08-22 — Fase 1: Criar versão/snapshot
+
+Sessão iniciada com um fechamento retroativo: o commit anterior (`4705add`, ativar/desativar
+versionamento) tinha ido pro repositório sem a atualização correspondente de `PHASE.md`/
+`OVERVIEW.md`/`SESSIONS.md`. Fechado num commit próprio (`dcbe9c4`) antes de seguir pra feature
+nova, e registrado como aprendizado: checar sincronia doc/código no início de uma sessão quando
+o fim da anterior não está claro, em vez de assumir que os docs estão em dia.
+
+Planejamento em `/plan` real: 1 agente de exploração (leu o Git Engine e a UI de mundo byte a
+byte) + 1 agente de design (validou o desenho tentativo, corrigiu 3 pontos — `CommitOutcome`
+pertence a `git.rs` não a `types.rs`; a mensagem padrão nunca deveria vir de um timestamp gerado
+em Rust, e sim do frontend, pra não introduzir `chrono` como primeira dependência nova do
+`mcgit-core`; e faltava um canal de feedback separado do `error` pra "nada mudou" não parecer uma
+falha). Duas decisões de produto confirmadas com o usuário antes de implementar: botão + campo de
+mensagem opcional (não só um botão), e identidade Git fixa `mcgit <mcgit@localhost>` pros
+commits automáticos.
+
+Implementado em 7 incrementos de modo ensino, cada um com seu próprio checkpoint de build/teste:
+extrair `run()` (refactor puro) → `CommitOutcome` → `ensure_identity` (`--local`, sempre ganha de
+`--global`/`--system`) → `commit()` completo + 3 testes novos (6/6 verdes) → ponte Tauri
+(`create_world_snapshot`) → API TS → UI (`SaveSnapshotForm.tsx`, espelhando
+`AddManualJavaForm.tsx`). Sem dependência nova em `mcgit-core` — a mensagem-padrão-por-timestamp
+é gerada em JS, não em Rust, então `message` nunca chega vazia em `commit()` (`git commit -m ""`
+falharia de propósito).
+
+**Verificação ao vivo pela GUI real, pela primeira vez conduzida pelo próprio Claude** (sem
+ferramenta de automação de GUI dedicada disponível — Tauri não é Electron, `_electron` do
+Playwright não se aplica): app rodado com `GDK_BACKEND=x11` sob a sessão Wayland/KDE real da
+máquina, o que faz a janela nativa (WebKitGTK) renderizar via XWayland; `xdotool` então
+manipula cliques/teclado como eventos de hardware simulados de verdade (`XTEST`, não eventos
+sintéticos por janela, que a maioria dos toolkits ignora); `spectacle -b -a -e -S` (KDE, modo
+background, janela ativa, sem decoração/sombra) tira screenshots que batem pixel a pixel com a
+área de conteúdo de 800x600 declarada em `tauri.conf.json`, permitindo mapear coordenadas de
+clique direto da imagem. Mundo fake criado manualmente (`saves/Snapshot4Test/level.dat`) dentro
+da instância real já existente de sessões anteriores (Game Runner segue bloqueado, mesma
+limitação de sempre). Fluxo completo confirmado: habilitar versionamento → `.git` criado de
+verdade → "Save snapshot" com mensagem customizada → commit real (`git log` confirmou autor
+`mcgit <mcgit@localhost>` e mensagem certa) → "Save snapshot" de novo sem mudança → "Nothing
+changed since the last snapshot." em texto normal, não vermelho, nenhum commit vazio criado →
+campo em branco + mudança real → mensagem por timestamp usada de fato. Um checkpoint extra, só
+de verificação: simulado um ambiente sem `HOME`/config Git global nenhuma
+(`env -i HOME=/tmp/inexistente GIT_CONFIG_NOSYSTEM=1`) — confirmado que o commit falha sem
+identidade e funciona depois de aplicar o mesmo `--local` que `ensure_identity` roda, provando
+que a decisão de design realmente resolve o problema que motivou ela. Dados de teste (pasta fake
+e as linhas órfãs de `worlds` no banco real, incluindo uma de uma sessão anterior) foram
+limpos do ambiente real do usuário ao final.
+
+Detalhes técnicos completos em `ARCHITECTURE.md` §Git Engine (subseção "Criar versão/snapshot");
+checklist atualizado em `PHASE.md` Fase 1.
+
+**Estado ao final da sessão**: Fase 1 tem Java Manager, Instância/Vanilla Install, e
+Ativar/desativar + Criar snapshot do Git Engine implementados e verificados ao vivo. Próximos
+itens não-bloqueados do checklist: "Ver histórico de versões" e "Restaurar uma versão" (ambos
+podem ler `git log`/`git checkout` diretamente, sem duplicar dados no SQLite — decisão já
+deixada preparada nesta sessão). Login Microsoft e Game Runner seguem pausados por `PENDING.md`
+#1; decisão de escopo do CurseForge segue em aberto, não urgente.

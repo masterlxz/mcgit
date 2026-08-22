@@ -95,3 +95,43 @@ pub async fn disable_world_versioning(
         git_enabled: row.git_enabled,
     })
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SnapshotDto {
+    pub created: bool,
+    pub commit_hash: Option<String>,
+}
+
+/// Saves a snapshot of the world's folder (`git add -A` + `git commit`).
+/// `created = false` means nothing had changed since the last snapshot —
+/// not a failure, just nothing to do.
+#[tauri::command]
+pub async fn create_world_snapshot(
+    instance_id: i64,
+    folder_name: String,
+    message: String,
+    state: State<'_, AppState>,
+) -> Result<SnapshotDto, String> {
+    let instances_dir = state.instances_dir.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::commit(&world_dir, &message)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(match outcome {
+        mcgit_core::git::CommitOutcome::Created(hash) => SnapshotDto {
+            created: true,
+            commit_hash: Some(hash),
+        },
+        mcgit_core::git::CommitOutcome::NothingToCommit => SnapshotDto {
+            created: false,
+            commit_hash: None,
+        },
+    })
+}

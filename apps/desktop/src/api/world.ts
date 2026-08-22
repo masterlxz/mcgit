@@ -16,3 +16,13 @@ export function enableWorldVersioning(instanceId: number, folderName: string): P
 export function disableWorldVersioning(instanceId: number, folderName: string): Promise<World> {
   return invoke("disable_world_versioning", { instanceId, folderName });
 }
+
+export type SnapshotResult = { created: boolean; commit_hash: string | null };
+
+export function createWorldSnapshot(
+  instanceId: number,
+  folderName: string,
+  message: string,
+): Promise<SnapshotResult> {
+  return invoke("create_world_snapshot", { instanceId, folderName, message });
+}

@@ -146,7 +146,15 @@ em paralelo, opcional. Absorve o que era "Fase 1 — MVP local" do mcgit-ferrame
   (`enable_world_versioning`/`disable_world_versioning`) e botão por mundo na tela de detalhe da
   instância. "Desativar" nunca apaga o `.git` nem histórico — só esconde a ação, reversível a
   qualquer momento. Detalhes completos em `ARCHITECTURE.md` §Git Engine.
-- [ ] Criar versão/snapshot (equivalente a `mcgit snapshot`) — UI diz "Salvar versão", não "commit"
+- [x] Criar versão/snapshot (equivalente a `mcgit snapshot`) — UI diz "Salvar versão", não
+  "commit", implementado (Sessão 4, 2026-08-22, continuação). `mcgit-core` ganha `commit()`
+  (`git add -A` + `git commit` + `git rev-parse HEAD`), com identidade Git fixa `mcgit
+  <mcgit@localhost>` configurada `--local` por mundo (funciona mesmo numa máquina que nunca usou
+  Git). "Nada mudou desde o último snapshot" é tratado como resultado normal
+  (`CommitOutcome::NothingToCommit`), não erro. Comando Tauri `create_world_snapshot` + botão
+  "Save snapshot" com campo de mensagem opcional (mensagem padrão por timestamp se vazio) na
+  tela de detalhe da instância. Verificado ao vivo pela GUI real, incluindo o cenário sem
+  identidade Git global nenhuma. Detalhes completos em `ARCHITECTURE.md` §Git Engine.
 - [ ] Ver histórico de versões (equivalente a `mcgit snapshots`) — timeline amigável, não `git log` cru
 - [ ] Restaurar uma versão (equivalente a `mcgit restore`) — checagem de mundo aberto, checkpoint de segurança antes de restaurar
 - [ ] Deletar uma versão (nunca silencioso, sempre com confirmação)
