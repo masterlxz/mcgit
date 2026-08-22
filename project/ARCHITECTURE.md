@@ -231,6 +231,20 @@ API), ~468MB de assets e ~77MB de libraries no cache compartilhado, `instance.js
 `java_installation_path` resolvido, linha no banco com `status='ready'` e `java_installation_id`
 preenchido.
 
+### Tela inicial (home screen) — implementado (Sessão 7, 2026-08-22, continuação)
+
+Item de UI puro, sem mudança em Rust/DB. `InstanceList.tsx` deixou de ser uma lista crua de
+links e virou uma lista de **cards** (nome como link pra tela de detalhe, versão do MC, e um
+botão "Jogar"). Decisões confirmadas com o usuário: (1) o mockup do `CONTEXT.md` mostra uma
+única instância em destaque ("My Minecraft") — o card se repete por instância em vez de assumir
+só uma, já que múltiplas instâncias já existem na prática; (2) o botão "Jogar" **aparece**
+(bate com o mockup) mas fica desabilitado com "Available after Microsoft login" — o Game Runner
+que de fato abriria o jogo ainda não existe (depende do login MS, `PENDING.md` #1). O texto do
+botão também reflete o `status` da instância (`installing`/`failed` mostram texto próprio, só
+`ready` mostra o aviso de login). Verificado ao vivo pela GUI real: card renderiza certo,
+navegação pro detalhe continua funcionando, botão "Jogar" confirmado não-clicável (sem
+navegação/efeito ao clicar).
+
 ---
 
 ## Git Engine

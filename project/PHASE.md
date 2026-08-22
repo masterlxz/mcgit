@@ -214,7 +214,16 @@ em paralelo, opcional. Absorve o que era "Fase 1 — MVP local" do mcgit-ferrame
   mundo (e um terceiro texto, achado durante a verificação, pro caso de ser o único snapshot
   existente, já que aí não há "estado anterior" nenhum pra voltar). Verificado ao vivo pela GUI
   real. Detalhes completos em `ARCHITECTURE.md` §Git Engine.
-- [ ] GUI básica: tela inicial com lista de instâncias + botão "Jogar" (mockup em `CONTEXT.md`)
+- [x] GUI básica: tela inicial com lista de instâncias + botão "Jogar" (mockup em `CONTEXT.md`),
+  implementado (Sessão 7, 2026-08-22, continuação). `InstanceList.tsx` virou uma lista de
+  cards (nome, versão do MC, botão "Jogar") em vez da lista de links crua de antes — mais
+  fiel ao espírito do mockup (que mostra uma única instância em destaque), mas funcionando bem
+  com várias instâncias reais, já que o card se repete por instância em vez de assumir só uma.
+  Botão "Jogar" existe na tela mas fica desabilitado com "Available after Microsoft login" —
+  decisão confirmada com o usuário: aparece (bate com o mockup, não fica escondido) em vez de
+  sumir, já que o Game Runner depende do login Microsoft ainda pausado (`PENDING.md` #1); texto
+  reflete `status` da instância (`installing`/`failed` mostram texto próprio no botão, não o
+  aviso de login). Nenhuma dependência nova, nenhuma migration — mudança só de UI.
 - [ ] Modo Básico/Avançado: avançado expõe Git (commits/branches/remotes/diff) — básico não
 - [ ] CLI em paralelo (opcional): `mcgit init/snapshot/snapshots/restore/delete`, `mcgit create/launch`
 - [ ] Validações de segurança básicas (ver `CONTEXT.md` §Security Requirements)

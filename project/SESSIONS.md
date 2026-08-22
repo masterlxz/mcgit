@@ -689,3 +689,28 @@ desativar, criar snapshot, ver histórico, restaurar e deletar, todos implementa
 verificados ao vivo. Itens restantes da Fase 1: "GUI básica" da tela inicial, "Modo Básico/
 Avançado", CLI opcional em paralelo. Game Runner e login Microsoft seguem pausados/bloqueados
 por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 7 (continuação) — 2026-08-22 — Fase 1: GUI básica da tela inicial
+
+Item de UI puro (sem mudança em Rust/DB), seguindo o mockup já especificado no `CONTEXT.md`.
+Duas decisões confirmadas com o usuário antes de implementar: `InstanceList.tsx` virou uma
+lista de **cards** (o mockup mostra uma única instância em destaque, mas o card se repete pra
+funcionar bem com várias instâncias reais); e o botão "Jogar" **aparece** desabilitado com
+"Available after Microsoft login" em vez de simplesmente não existir ainda — já que o Game
+Runner que abriria o jogo de fato segue bloqueado pelo login Microsoft pausado (`PENDING.md`
+#1), mas esconder o botão inteiro pareceria menos fiel ao mockup e menos transparente sobre
+o que falta. O texto do botão também reflete o `status` real da instância (`installing`/
+`failed` mostram texto próprio).
+
+Verificado ao vivo pela GUI real: card renderiza certo (nome, versão, botão), navegação pro
+detalhe da instância continua funcionando, botão "Jogar" confirmado não-clicável.
+
+Detalhes completos em `ARCHITECTURE.md` §Gerenciamento de Instâncias (subseção "Tela inicial");
+checklist atualizado em `PHASE.md` Fase 1.
+
+**Estado ao final da sessão**: itens restantes da Fase 1: "Modo Básico/Avançado" (expõe Git
+pro usuário avançado) e a CLI opcional em paralelo. Game Runner e login Microsoft seguem
+pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não
+urgente.
