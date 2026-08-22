@@ -155,7 +155,28 @@ em paralelo, opcional. Absorve o que era "Fase 1 — MVP local" do mcgit-ferrame
   "Save snapshot" com campo de mensagem opcional (mensagem padrão por timestamp se vazio) na
   tela de detalhe da instância. Verificado ao vivo pela GUI real, incluindo o cenário sem
   identidade Git global nenhuma. Detalhes completos em `ARCHITECTURE.md` §Git Engine.
-- [ ] Ver histórico de versões (equivalente a `mcgit snapshots`) — timeline amigável, não `git log` cru
+- [x] Ver histórico de versões (equivalente a `mcgit snapshots`) — timeline amigável, não
+  `git log` cru, implementado (Sessão 5, 2026-08-22). `mcgit-core` ganha `log()`: roda
+  `git log --pretty=format:%H\x1f%aI\x1f%s` (campos separados por `\x1f`, um commit por
+  linha) e parseia em `Vec<Snapshot { hash, date, message }>`, mais recente primeiro. Dois
+  casos tratados como histórico vazio, não erro: mundo nunca versionado (`!is_repository`)
+  e mundo versionado sem nenhum snapshot ainda (git recusa `git log` num repo sem commits;
+  esse stderr específico vira `Ok(vec![])`). Comando Tauri `list_world_history` (mesmo
+  padrão dos outros: `spawn_blocking`, path resolvido, erro como `String`); `SnapshotDto`
+  antigo (resultado de salvar snapshot) renomeado pra `SnapshotResultDto` pra não colidir
+  com o novo `SnapshotDto` do histórico (`hash`/`date`/`message`). Botão "Show history" por
+  mundo (só quando `git_enabled`), carregado sob demanda no primeiro clique — decisão de UX
+  confirmada com o usuário (botão sob demanda, não sempre visível; sem limite de
+  quantidade por ora). Nenhuma dependência nova (`chrono`/`time`): datas ficam como string
+  ISO 8601 crua, formatadas no frontend com `toLocaleString()`, mesmo padrão já usado.
+  **Bug encontrado e corrigido durante a verificação ao vivo**: salvar um snapshot com o
+  painel de histórico já aberto deixava a lista desatualizada até fechar/reabrir —
+  `handleSaveSnapshot` agora recarrega o histórico daquele mundo automaticamente quando um
+  snapshot novo é criado e o histórico já tinha sido carregado antes. Verificado ao vivo
+  pela GUI real (mundo de teste criado/removido na pasta `saves/` da instância existente):
+  histórico vazio, 1 snapshot, ordem correta com 3 snapshots, atualização automática após
+  salvar, e ausência do botão num mundo nunca versionado. Detalhes completos em
+  `ARCHITECTURE.md` §Git Engine.
 - [ ] Restaurar uma versão (equivalente a `mcgit restore`) — checagem de mundo aberto, checkpoint de segurança antes de restaurar
 - [ ] Deletar uma versão (nunca silencioso, sempre com confirmação)
 - [ ] GUI básica: tela inicial com lista de instâncias + botão "Jogar" (mockup em `CONTEXT.md`)

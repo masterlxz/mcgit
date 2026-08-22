@@ -73,6 +73,44 @@ pub fn commit(world_dir: &Path, message: &str) -> Result<CommitOutcome, GitError
     ))
 }
 
+/// One saved snapshot, as read from `git log`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snapshot {
+    pub hash: String,
+    pub date: String,
+    pub message: String,
+}
+
+/// Lists every snapshot saved for `world_dir`, most recent first. A world
+/// that was never versioned, or that was versioned but never had a
+/// snapshot saved yet, both return an empty list — neither case is an
+/// error, they're just "no history yet".
+pub fn log(world_dir: &Path) -> Result<Vec<Snapshot>, GitError> {
+    if !is_repository(world_dir) {
+        return Ok(Vec::new());
+    }
+
+    let output = match run(world_dir, &["log", "--pretty=format:%H\x1f%aI\x1f%s"]) {
+        Ok(output) => output,
+        Err(GitError::CommandFailed(stderr)) if stderr.contains("does not have any commits yet") => {
+            return Ok(Vec::new());
+        }
+        Err(e) => return Err(e),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.splitn(3, '\x1f');
+            let hash = fields.next()?.to_string();
+            let date = fields.next()?.to_string();
+            let message = fields.next()?.to_string();
+            Some(Snapshot { hash, date, message })
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,5 +194,62 @@ mod tests {
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert_eq!(outcome, CommitOutcome::NothingToCommit);
+    }
+
+    #[test]
+    fn log_on_never_initialized_world_returns_empty() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-log-never-init-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+
+        let history = log(&world_dir).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn log_on_repo_with_no_commits_returns_empty() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-log-no-commits-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+
+        let history = log(&world_dir).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn log_returns_one_snapshot_with_full_hash() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-log-one-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"fake world data").unwrap();
+        commit(&world_dir, "First snapshot").unwrap();
+
+        let history = log(&world_dir).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].hash.len(), 40);
+        assert_eq!(history[0].message, "First snapshot");
+    }
+
+    #[test]
+    fn log_returns_snapshots_most_recent_first() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-log-two-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
+        commit(&world_dir, "First snapshot").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"v2").unwrap();
+        commit(&world_dir, "Second snapshot").unwrap();
+
+        let history = log(&world_dir).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].message, "Second snapshot");
+        assert_eq!(history[1].message, "First snapshot");
     }
 }

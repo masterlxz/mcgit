@@ -97,7 +97,7 @@ pub async fn disable_world_versioning(
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SnapshotDto {
+pub struct SnapshotResultDto {
     pub created: bool,
     pub commit_hash: Option<String>,
 }
@@ -111,7 +111,7 @@ pub async fn create_world_snapshot(
     folder_name: String,
     message: String,
     state: State<'_, AppState>,
-) -> Result<SnapshotDto, String> {
+) -> Result<SnapshotResultDto, String> {
     let instances_dir = state.instances_dir.clone();
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         let world_dir = scaffold::instance_root(&instances_dir, instance_id)
@@ -125,13 +125,51 @@ pub async fn create_world_snapshot(
     .map_err(|e| e.to_string())?;
 
     Ok(match outcome {
-        mcgit_core::git::CommitOutcome::Created(hash) => SnapshotDto {
+        mcgit_core::git::CommitOutcome::Created(hash) => SnapshotResultDto {
             created: true,
             commit_hash: Some(hash),
         },
-        mcgit_core::git::CommitOutcome::NothingToCommit => SnapshotDto {
+        mcgit_core::git::CommitOutcome::NothingToCommit => SnapshotResultDto {
             created: false,
             commit_hash: None,
         },
     })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SnapshotDto {
+    pub hash: String,
+    pub date: String,
+    pub message: String,
+}
+
+/// Lists every snapshot saved for a world, most recent first. A world
+/// that was never versioned, or was versioned but never had a snapshot
+/// saved yet, both return an empty list — not an error.
+#[tauri::command]
+pub async fn list_world_history(
+    instance_id: i64,
+    folder_name: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<SnapshotDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    let history = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::log(&world_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(history
+        .into_iter()
+        .map(|snapshot| SnapshotDto {
+            hash: snapshot.hash,
+            date: snapshot.date,
+            message: snapshot.message,
+        })
+        .collect())
 }

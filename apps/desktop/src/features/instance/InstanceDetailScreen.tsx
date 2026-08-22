@@ -5,7 +5,9 @@ import {
   createWorldSnapshot,
   disableWorldVersioning,
   enableWorldVersioning,
+  listWorldHistory,
   listWorlds,
+  type Snapshot,
   type World,
 } from "../../api/world";
 import { WorldList } from "../world/WorldList";
@@ -16,6 +18,7 @@ export function InstanceDetailScreen() {
 
   const [instance, setInstance] = useState<Instance | null>(null);
   const [worlds, setWorlds] = useState<World[]>([]);
+  const [historyByWorld, setHistoryByWorld] = useState<Record<string, Snapshot[] | undefined>>({});
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -58,6 +61,19 @@ export function InstanceDetailScreen() {
     try {
       const result = await createWorldSnapshot(instanceId, folderName, message);
       setStatus(result.created ? "Snapshot saved." : "Nothing changed since the last snapshot.");
+      if (result.created && historyByWorld[folderName] !== undefined) {
+        await handleShowHistory(folderName);
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleShowHistory(folderName: string) {
+    setError(null);
+    try {
+      const history = await listWorldHistory(instanceId, folderName);
+      setHistoryByWorld((prev) => ({ ...prev, [folderName]: history }));
     } catch (err) {
       setError(String(err));
     }
@@ -75,8 +91,10 @@ export function InstanceDetailScreen() {
       <h2>Worlds</h2>
       <WorldList
         worlds={worlds}
+        historyByWorld={historyByWorld}
         onToggleVersioning={handleToggleVersioning}
         onSaveSnapshot={handleSaveSnapshot}
+        onShowHistory={handleShowHistory}
       />
     </section>
   );

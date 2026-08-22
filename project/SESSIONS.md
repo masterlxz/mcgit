@@ -523,3 +523,58 @@ itens não-bloqueados do checklist: "Ver histórico de versões" e "Restaurar um
 podem ler `git log`/`git checkout` diretamente, sem duplicar dados no SQLite — decisão já
 deixada preparada nesta sessão). Login Microsoft e Game Runner seguem pausados por `PENDING.md`
 #1; decisão de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 5 — 2026-08-22 — Fase 1: Ver histórico de versões
+
+Sessão iniciada com "bora continuar" — conferido `git log` contra `PHASE.md` antes de escolher o
+próximo passo (working tree limpo, tudo sincronizado desde o fechamento da Sessão 4). Próximo
+item não-bloqueado do checklist: "Ver histórico de versões", terceiro slice do Git Engine.
+
+Duas decisões de UX confirmadas com o usuário via `AskUserQuestion` antes de planejar: botão
+"Ver histórico" sob demanda por mundo (não sempre visível) e mostrar todos os snapshots de uma
+vez (sem paginação por ora).
+
+- **`crates/mcgit-core`**: `log()` reaproveita o chokepoint `run()` já existente. Formato pedido
+  ao Git: `git log --pretty=format:%H\x1f%aI\x1f%s` (campos separados por `\x1f`, um commit por
+  linha, `%s` sempre uma linha só). Dois casos viram lista vazia, não erro: mundo nunca
+  `git init`ado e mundo versionado sem nenhum snapshot ainda (Git recusa `git log` num repo sem
+  commits; esse stderr específico é reconhecido e vira `Ok(vec![])`, mesmo espírito do
+  `CommitOutcome::NothingToCommit` da sessão anterior). Sem dependência nova — datas ficam como
+  string ISO 8601 crua, formatadas no frontend. 4 testes novos, 10/10 verdes no crate.
+- **Ponte Tauri**: `list_world_history`, mesmo formato dos comandos existentes. O `SnapshotDto`
+  que já existia (resultado de salvar snapshot) foi renomeado pra `SnapshotResultDto` pra abrir
+  espaço pro novo `SnapshotDto` do histórico (forma diferente: `hash`/`date`/`message`).
+- **UI**: botão "Show history"/"Hide history" por mundo em `WorldList.tsx`, carregado sob
+  demanda (só busca no primeiro clique que expande, guarda em `historyByWorld` pra não rebuscar
+  ao recolher/expandir de novo). Novo componente `WorldHistory.tsx` (recebe dados via prop,
+  mesmo padrão sem-`invoke`-direto de `SaveSnapshotForm`).
+
+**Bug real encontrado e corrigido durante a verificação ao vivo pela GUI**: salvar um snapshot
+novo com o painel de histórico já aberto não atualizava a lista — ficava mostrando o estado
+antigo até fechar/reabrir o painel manualmente. Corrigido em `handleSaveSnapshot`: se o
+histórico daquele mundo já tinha sido carregado antes, ele é recarregado automaticamente depois
+de um snapshot criado com sucesso.
+
+Implementado em incrementos de modo ensino (explicando `git log --pretty=format`, o separador
+`\x1f`, e o caso "repo sem commits" antes do código de `log()`; depois o padrão sob-demanda do
+React antes do código de frontend), cada um com seu checkpoint de build/teste.
+
+**Verificado ao vivo pela GUI real** (mesma técnica de automação da Sessão 4 —
+`GDK_BACKEND=x11` + `xdotool` + `spectacle`, mundo fake criado dentro da pasta `saves/` da
+instância real já existente, dados de teste limpos do ambiente do usuário ao final, igual à
+sessão anterior): botão de histórico ausente num mundo nunca versionado; "No snapshots yet."
+num mundo versionado sem snapshot nenhum; 1 snapshot com hash/data/mensagem corretos; 2º e 3º
+snapshots na ordem certa (mais recente primeiro); atualização automática do histórico aberto
+após salvar um novo snapshot (a correção do bug acima, confirmada funcionando).
+
+Detalhes técnicos completos em `ARCHITECTURE.md` §Git Engine (subseção "Ver histórico de
+versões"); checklist atualizado em `PHASE.md` Fase 1.
+
+**Estado ao final da sessão**: Fase 1 tem Java Manager, Instância/Vanilla Install, e
+Ativar/desativar + Criar snapshot + Ver histórico do Git Engine implementados e verificados ao
+vivo. Próximo item não-bloqueado do checklist: "Restaurar uma versão" (`git checkout`,
+checagem de mundo aberto, checkpoint de segurança antes de restaurar). Login Microsoft e Game
+Runner seguem pausados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto,
+não urgente.

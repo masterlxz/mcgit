@@ -323,6 +323,54 @@ mensagem customizada → commit real confirmado via `git log` (autor e mensagem 
 snapshot" de novo sem mudança → "Nothing changed since the last snapshot." (não erro), nenhum
 commit vazio criado → campo em branco + mudança real → mensagem por timestamp usada de fato.
 
+### Ver histórico de versões — implementado (Sessão 5, 2026-08-22)
+
+Terceiro slice do Git Engine. Entrega uma timeline amigável dos snapshots de um mundo — não um
+dump cru de `git log` — lendo o Git ao vivo, exatamente como o item anterior deixou preparado
+("o histórico não é duplicado no SQLite").
+
+- **`crates/mcgit-core`**: `log(world_dir) -> Result<Vec<Snapshot>, GitError>`, reaproveitando o
+  chokepoint `run()`. Formato pedido ao Git: `git log --pretty=format:%H\x1f%aI\x1f%s` — campos
+  separados por `\x1f` (unit separator, um caractere de controle que nunca aparece numa
+  mensagem de commit normal), um commit por linha (Git insere `\n` entre commits sozinho nesse
+  modo de formatação), `%s` é sempre uma única linha por definição (só o assunto do commit), o
+  que torna o parse por linha seguro. Dois casos viram lista vazia, não erro: mundo nunca
+  `git init`ado (checado via `is_repository` antes de rodar `git log`) e mundo versionado sem
+  nenhum snapshot ainda (Git recusa `git log` num repo sem commits com "does not have any
+  commits yet" no stderr — esse texto específico é capturado e vira `Ok(vec![])`, mesmo espírito
+  do `CommitOutcome::NothingToCommit`). Ordem de retorno já vem do próprio Git: mais recente
+  primeiro. Sem dependência nova — `date` fica como string ISO 8601 crua (`%aI`), igual ao
+  padrão já usado de empurrar formatação de data pro frontend.
+- **Testes** (`mcgit-core`, mesmo estilo dos anteriores): mundo nunca inicializado → vazio; repo
+  inicializado sem commits → vazio; 1 commit → 1 `Snapshot` com hash de 40 chars; 2 commits →
+  ordem mais-recente-primeiro confirmada. 10/10 testes verdes no crate.
+- **Ponte Tauri**: `list_world_history` (mesmo formato dos outros comandos de mundo —
+  `spawn_blocking`, path resolvido via `scaffold::instance_root(...).join("minecraft").join("saves")`,
+  erro tipado convertido pra `String` no boundary). O `SnapshotDto` que já existia (resultado de
+  `create_world_snapshot`: `created`/`commit_hash`) foi renomeado pra `SnapshotResultDto` pra
+  abrir espaço pro novo `SnapshotDto` do histórico (`hash`/`date`/`message`) — só usado dentro do
+  próprio arquivo, renomear não teve efeito em mais nada.
+- **UI**: botão "Show history"/"Hide history" por mundo em `WorldList.tsx` (só quando
+  `git_enabled`), carregado sob demanda — só dispara `listWorldHistory` no primeiro clique que
+  expande, resultado fica guardado em `historyByWorld` (novo estado em
+  `InstanceDetailScreen.tsx`) pra não rebuscar toda vez que expande/recolhe. Decisões de UX
+  confirmadas com o usuário: botão sob demanda (não sempre visível) e mostrar todos os
+  snapshots de uma vez (sem paginação por ora). Novo componente `WorldHistory.tsx` (recebe
+  `snapshots` via prop, sem `invoke` direto — mesmo padrão de `SaveSnapshotForm`), mostra hash
+  curto (7 chars), data via `new Date(date).toLocaleString()`, e a mensagem.
+- **Bug encontrado e corrigido durante a verificação ao vivo**: salvar um snapshot novo com o
+  painel de histórico já aberto não atualizava a lista (ficava mostrando o estado antigo até
+  fechar/reabrir o painel). Corrigido em `handleSaveSnapshot`: se `historyByWorld[folderName]`
+  já foi carregado antes (painel já foi aberto ao menos uma vez) e o snapshot foi criado de
+  verdade, o histórico daquele mundo é recarregado automaticamente.
+
+**Validado ao vivo pela GUI real** (mesma técnica de automação da Sessão 4 — `GDK_BACKEND=x11` +
+`xdotool` + `spectacle`, mundo fake criado na pasta `saves/` de uma instância já existente,
+removido ao final): botão de histórico ausente num mundo nunca versionado; "No snapshots yet."
+num mundo versionado sem nenhum snapshot; 1 snapshot aparece com hash/data/mensagem corretos;
+2º e 3º snapshots aparecem na ordem certa (mais recente primeiro); salvar um snapshot com o
+painel já aberto atualiza a lista sozinho, sem precisar fechar/reabrir.
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

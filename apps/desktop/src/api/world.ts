@@ -26,3 +26,9 @@ export function createWorldSnapshot(
 ): Promise<SnapshotResult> {
   return invoke("create_world_snapshot", { instanceId, folderName, message });
 }
+
+export type Snapshot = { hash: string; date: string; message: string };
+
+export function listWorldHistory(instanceId: number, folderName: string): Promise<Snapshot[]> {
+  return invoke("list_world_history", { instanceId, folderName });
+}
