@@ -135,8 +135,17 @@ em paralelo, opcional. Absorve o que era "Fase 1 — MVP local" do mcgit-ferrame
 - [ ] Iniciar o Minecraft a partir de uma instância (Game Runner multiplataforma) — próximo item
   natural da Fase 1, mas depende de uma sessão autenticada da Minecraft Services API pra testar
   de ponta a ponta (login MS pausado, ver acima).
-- [ ] Gerenciar mundos dentro de uma instância (listar, abrir pasta, etc.)
-- [ ] Ativar versionamento Git num mundo (opt-in, não forçado) — comandos internos equivalentes a `mcgit init`
+- [~] Gerenciar mundos dentro de uma instância (listar, abrir pasta, etc.) — listagem
+  implementada como efeito colateral do item de versionamento acima (`list_worlds` lê `saves/*`
+  no filesystem, Sessão 4, 2026-08-22); "abrir pasta" e outras ações de gerenciamento ainda não
+- [x] Ativar versionamento Git num mundo (opt-in, não forçado) — comandos internos equivalentes
+  a `mcgit init`, implementado (Sessão 4, 2026-08-22). Nasce a crate `mcgit-core` (Git Engine),
+  chamando o binário `git` via subprocess (decisão da Fase 0, primeira vez exercitada com código
+  real). Nova tabela `worlds` em `mcgit-db` (`git_enabled` por mundo, primeira FK obrigatória do
+  projeto — `ON DELETE CASCADE` pra `instances`, testado de verdade). Dois comandos Tauri novos
+  (`enable_world_versioning`/`disable_world_versioning`) e botão por mundo na tela de detalhe da
+  instância. "Desativar" nunca apaga o `.git` nem histórico — só esconde a ação, reversível a
+  qualquer momento. Detalhes completos em `ARCHITECTURE.md` §Git Engine.
 - [ ] Criar versão/snapshot (equivalente a `mcgit snapshot`) — UI diz "Salvar versão", não "commit"
 - [ ] Ver histórico de versões (equivalente a `mcgit snapshots`) — timeline amigável, não `git log` cru
 - [ ] Restaurar uma versão (equivalente a `mcgit restore`) — checagem de mundo aberto, checkpoint de segurança antes de restaurar

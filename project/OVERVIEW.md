@@ -28,7 +28,7 @@ Stack principal:
 
 ```
 Fase 0  — Pesquisa & Arquitetura                    [x] Encerrada (3 itens adiados, não-bloqueantes — ver PHASE.md)
-Fase 1  — MVP do Launcher                           [ ] Não iniciada
+Fase 1  — MVP do Launcher                           [~] Em andamento (Java Manager, Instância+Vanilla, Ativar/desativar Git — ver PHASE.md)
 Fase 2  — Qualidade do Versionamento                [ ] Não iniciada
 Fase 3  — Modloaders, Mods & Modpacks               [ ] Não iniciada
 Fase 4  — Minecraft-Aware World Diffing             [ ] Não iniciada

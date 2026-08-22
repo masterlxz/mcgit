@@ -39,7 +39,8 @@ StorageProvider                    AuthenticationProvider
 ```
 
 **Proposta inicial de workspace Rust** (confirmada em parte na prática — `mcgit-java`,
-`mcgit-db` e `apps/desktop` existem e compilam desde a Sessão 2, 2026-08-16; os demais crates
+`mcgit-db` e `apps/desktop` existem desde a Sessão 2, 2026-08-16; `mcgit-minecraft` e
+`mcgit-instance` desde a Sessão 3; `mcgit-core` desde a Sessão 4, 2026-08-22; os demais crates
 abaixo continuam só planejados, sem código ainda):
 
 ```text
@@ -67,7 +68,7 @@ mcgit/
 | Linguagem principal | Rust vs Python | **Rust** ✓ (decidido na Sessão 1) — reaproveita a experiência do desktop do TruthID (Tauri); confirmado válido pro launcher inteiro na revisão de escopo (Sessão 1, mesmo dia) |
 | Interface | CLI vs GUI como produto principal | **GUI primeiro** ✓ (decisão revisada na Sessão 1) — um launcher é fundamentalmente uma experiência gráfica; **inverte** a decisão anterior "CLI primeiro" da v1.0 (que fazia sentido pra uma ferramenta de linha de comando isolada, não pra um launcher). CLI continua existindo em paralelo (`mcgit init/commit/log/restore` + comandos de launcher), mas é opcional — nunca bloqueante pro jogador comum |
 | Stack de GUI | Tauri+React/TS vs outra opção | **Tauri + Rust (backend) + React/TypeScript (frontend)** ✓ (decidido na Sessão 1, confirmado na revisão de escopo) — mesma stack do `truthid/desktop`; atende os requisitos de §24/26 do prompt original (controle de processo, filesystem, segurança, multiplataforma) |
-| Uso do Git (dentro do Git Engine) | Chamar o binário `git` do sistema vs biblioteca (`git2`/libgit2 em Rust) vs implementação própria mínima | **Binário `git` via subprocess** ✓ (decidido por análise, Sessão 1) — mais simples, sem custo de build/linking cross-platform de uma lib C |
+| Uso do Git (dentro do Git Engine) | Chamar o binário `git` do sistema vs biblioteca (`git2`/libgit2 em Rust) vs implementação própria mínima | **Binário `git` via subprocess** ✓ (decidido por análise, Sessão 1; primeira vez exercitada com código real na Sessão 4, 2026-08-22 — `git::init` via `std::process::Command`) — mais simples, sem custo de build/linking cross-platform de uma lib C |
 | Estratégia de armazenamento de `.mca` | Git puro vs Git LFS vs camada própria por região/chunk antes do Git | **Git puro, sem LFS no MVP** ✓ (decidido por análise, Sessão 1) — benchmark já mostra Git puro + `git gc` resolvendo o caso comum; LFS adicionaria uma dependência de servidor que não se justifica ainda. Reabrir se um mundo real em produção mostrar o contrário |
 | Compactação do repositório (`git gc`) | Depender do auto-gc padrão do Git vs o mcgit disparar `git gc`/repack periodicamente por conta própria | **mcgit dispara `git gc` por conta própria** ✓ (decidido, Sessão 1) — sem compactar, o `.git` cresce ~5.3M por snapshot mesmo mudando só 2-3 chunks de 960; com `git gc --aggressive`, 7 snapshots ficaram do tamanho de ~1 |
 | Merge entre branches de mundo | Merge tradicional do Git vs não suportar merge (só criar/descartar branch) | **Em aberto** — não assumir que merge tradicional é seguro para arquivos de mundo |
@@ -232,6 +233,49 @@ preenchido.
 
 ---
 
+## Git Engine
+
+Módulo que versiona o conteúdo de um mundo (`saves/<folder>/`) com Git, sem exigir que o
+jogador saiba que Git existe — a UI mostra "Ativar versionamento" / "Desativar versionamento"
+por mundo, nunca `git init`/`commit`.
+
+### Ativar/desativar versionamento — implementado (Sessão 4, 2026-08-22)
+
+Primeiro slice de código do Git Engine (`mcgit-core`), aplicando a decisão da Fase 0 de chamar o
+binário `git` do sistema via subprocess em vez de `git2`/libgit2.
+
+- **`crates/mcgit-core`** (biblioteca pura, mesmo princípio de `mcgit-java`/`mcgit-minecraft`):
+  só duas funções por enquanto — `git::init(world_dir)` (roda `git init` via
+  `std::process::Command`) e `git::is_repository(world_dir)` (checa se `.git/` existe). `init` é
+  deliberadamente idempotente sem checar `is_repository` primeiro — `git init` num repositório já
+  inicializado é um no-op seguro por garantia do próprio Git, então checar antes seria uma
+  validação redundante.
+- **Tabela `worlds`** (`mcgit-db`): primeira tabela do projeto cuja chave estrangeira é
+  `NOT NULL` (`instance_id`, `ON DELETE CASCADE`) — diferente de `instances.java_installation_id`
+  (`SET NULL`, opcional). Faz sentido aqui porque um `world` sem instância não tem significado
+  (não é "Java indisponível", é "não existe mais"); testado de verdade (`deleting_instance_
+  cascades_to_worlds`), não só assumido pelo SQL. Índice único em `(instance_id, folder_name)`
+  evita duas linhas pro mesmo mundo. `db_world::set_git_enabled` é find-or-create: cobre tanto
+  "ativar pela primeira vez" (insere) quanto "reativar depois de desativar" (atualiza a mesma
+  linha) sem duplicar.
+- **Ponte Tauri** (`commands/world.rs`): `list_worlds` cruza duas fontes — o filesystem manda
+  (`saves/*` com `level.dat` é a lista real de mundos que existem) e o banco só complementa
+  `git_enabled` pros que já têm uma linha (mundo nunca versionado não tem linha, e isso é
+  equivalente a `git_enabled=false`, não um erro). `enable_world_versioning` roda o `git init`
+  bloqueante dentro de `spawn_blocking` antes de gravar no banco — mesmo cuidado que faltou no
+  Java Manager (ver §Débitos Técnicos, item de extração síncrona), aplicado aqui desde o início.
+- **"Desativar" é só um flag, nunca uma exclusão**: `disable_world_versioning` atualiza
+  `git_enabled=false` e não toca no `.git/` nem em nenhum commit — histórico continua intacto no
+  disco, e reativar mais tarde só volta o flag pra `true`. Decisão de produto deliberada (mundo
+  do jogador não perde histórico por um toggle de UI).
+- **UI**: botão de ativar/desativar por mundo na tela de detalhe da instância
+  (`InstanceDetailScreen.tsx` → `WorldList.tsx`).
+
+Escopo desta sessão é só o `git init` — criar snapshot (`git commit`), ver histórico e restaurar
+ainda não existem (próximos itens da Fase 1, ver `PHASE.md`).
+
+---
+
 ## Schema do Banco Local (SQLite) — proposta inicial
 
 ```sql
@@ -277,6 +321,20 @@ qualquer arquivo existir em disco; (3) `loader` é um enum tipado (`DeriveActive
 `'vanilla'` por enquanto) em vez de `TEXT` livre, mesmo padrão de `JavaSource` — Fase 3
 (Fabric/Forge/NeoForge) só precisa adicionar variantes. Pasta em disco nomeada pelo `id`
 autoincrement do banco, não UUID (sem precedente de UUID em nenhuma outra tabela do projeto).
+
+**`worlds` implementada** (Sessão 4, 2026-08-22) — schema real, diferente do esboço acima:
+
+```sql
+worlds(id, instance_id, folder_name, git_enabled, created_at)
+```
+
+Diferenças deliberadas do esboço original: (1) `folder_name` no lugar de `name`+`path` — o nome
+da pasta dentro de `saves/` já é o identificador (não precisa de path absoluto guardado, a
+instância já sabe onde fica sua própria pasta); (2) `instance_id` é `NOT NULL` com
+`ON DELETE CASCADE` (não `SET NULL` como em `instances.java_installation_id`) — um `world` órfão
+de instância não faz sentido, ver §Git Engine; (3) índice único em `(instance_id, folder_name)`
+em vez de um `id`/path global único, já que o mesmo nome de pasta pode existir em instâncias
+diferentes.
 
 ---
 

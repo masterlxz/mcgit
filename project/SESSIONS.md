@@ -428,3 +428,39 @@ verificados. Login Microsoft, Game Runner, e resto da Fase 1 (mundos, versioname
 snapshots) seguem não implementados. Pendências que seguem de sessões anteriores: decisão de
 escopo do CurseForge; `PENDING.md` #1 agora com a cadeia de dependência CNPJ→DUNS→ID@Xbox
 mapeada, mas pausado por decisão do usuário.
+
+---
+
+## Sessão 4 — 2026-08-22 — Fase 1: Ativar/desativar versionamento Git num mundo
+
+Com login Microsoft ainda pausado (`PENDING.md` #1) e Java Manager + Instância/Vanilla Install já
+prontos, seguiu pro próximo item não-bloqueado da Fase 1: nasce o **Git Engine**, o módulo que dá
+nome ao projeto.
+
+- **`crates/mcgit-core`** (biblioteca pura, mesmo princípio de `mcgit-java`/`mcgit-minecraft`):
+  primeira aplicação real da decisão da Fase 0 de chamar o binário `git` do sistema via
+  subprocess em vez de `git2`/libgit2. Só duas funções por enquanto: `git::init` (roda
+  `git init` via `std::process::Command`, idempotente por garantia do próprio Git — não precisa
+  checar `is_repository` antes) e `git::is_repository`.
+- **Tabela `worlds`** (`mcgit-db`): primeira FK `NOT NULL`/`ON DELETE CASCADE` do projeto (pra
+  `instances`) — diferente do `SET NULL` de `instances.java_installation_id`, porque um `world`
+  sem instância não tem significado. Testado de verdade
+  (`deleting_instance_cascades_to_worlds`), não só assumido pelo SQL. `set_git_enabled` é
+  find-or-create, cobrindo ativar-pela-primeira-vez e reativar-depois-de-desativar sem duplicar
+  linha (índice único em `instance_id, folder_name` garante isso no banco também).
+- **3 comandos Tauri novos**: `list_worlds` (cruza filesystem — `saves/*` com `level.dat` é a
+  lista real de mundos — com o banco, que só complementa `git_enabled`), `enable_world_
+  versioning` (roda `git init` dentro de `spawn_blocking`, evitando repetir o débito técnico do
+  Java Manager de bloquear o executor async), `disable_world_versioning`.
+- **Decisão de produto confirmada**: "desativar" nunca apaga `.git`/histórico, só esconde a ação
+  na UI — reversível a qualquer momento reativando o flag.
+- Botão por mundo na tela de detalhe da instância (`InstanceDetailScreen.tsx`/`WorldList.tsx`).
+
+Detalhes técnicos completos em `ARCHITECTURE.md` §Git Engine e §Schema do Banco Local; checklist
+atualizado em `PHASE.md` Fase 1.
+
+**Estado ao final da sessão**: Fase 1 tem Java Manager, Instância/Vanilla Install e
+Ativar/desativar versionamento Git implementados e commitados (`4705add`). Próximo item natural:
+criar versão/snapshot (`git commit` por trás de "Salvar versão" na UI). Login Microsoft e Game
+Runner seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em
+aberto, não urgente.
