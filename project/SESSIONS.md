@@ -751,3 +751,53 @@ em `PHASE.md` Fase 1.
 (`mcgit init/snapshot/snapshots/restore/delete`, `mcgit create/launch`) — nunca bloqueante pro
 jogador comum. Game Runner e login Microsoft seguem pausados/bloqueados por `PENDING.md` #1;
 decisão de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 8 — 2026-09-01 — Reordenação do roadmap + Fase 6: Criar/trocar de branch
+
+Sessão começou com um pedido de reprioridade: o usuário quer aprofundar versionamento de mundo
+(incluindo branches) e a GUI antes do resto do escopo do launcher (mods, backup/sync, Arweave).
+Confirmado via `AskUserQuestion`: nova ordem de execução é fechar as pontas soltas de Git da
+Fase 1 → **Fase 6 (Branching)**, começando por "criar/trocar branch" → Fase 2 (auto-snapshot/
+auto-gc) → Fase 4 (diff entre snapshots) → só então retomar Fase 3/5/7 na ordem antiga. A
+numeração das fases não mudou (evita invalidar referências cruzadas já escritas) — só uma nota
+de reordenação foi acrescentada em `PHASE.md`/`OVERVIEW.md`. Usuário também confirmou que já
+está seguro em Git especificamente — modo ensino segue de pé pra Rust/TypeScript/formatos de
+mundo, mas não precisa mais de explicação devagar pra conceitos de Git.
+
+Implementado o primeiro item da trilha priorizada: **criar/trocar de branch**. Backend
+(`mcgit-core::git`): `current_branch()`, `list_branches()`, `create_branch()` (`checkout -b`,
+atômico, sem checkpoint/checagem de mundo aberto porque não muda nenhum arquivo) e
+`switch_branch()` (checkpoint automático de mudanças pendentes antes de trocar, mesma guarda de
+mundo aberto do `restore()`/`delete_snapshot()`). Novo `BranchError`. Sem migration nova —
+branch atual sempre derivada ao vivo via `git branch --show-current`. Dois pontos de design
+confirmados com o usuário via `AskUserQuestion`: checkpoint automático antes de trocar (em vez
+de deixar o Git recusar) e seção de branches na GUI visível só em Modo Avançado (em vez de
+sempre visível). Novos comandos Tauri (`list_world_branches`/`create_world_branch`/
+`switch_world_branch`) e novo componente `WorldBranches.tsx`, espelhando o padrão de
+`WorldHistory.tsx` (confirmação inline, sem modal). Trocar de branch também re-sincroniza o
+painel de histórico se já estava aberto, prevenindo desde o início a mesma classe de bug de
+painel desatualizado corrigida na Sessão 5. 6 testes novos em `git.rs` (28/28 verdes no crate);
+frontend compila limpo (`tsc --noEmit`).
+
+**Verificação ao vivo pela GUI não foi feita nesta sessão** — achado real de ambiente, não
+técnico: a tela de desenvolvimento tinha uma partida de xadrez ao vivo aberta no navegador, que
+roubava o foco da janela do mcgit repetidamente, mesmo depois de `windowfocus`/`windowraise`/
+forçar `_NET_WM_STATE_ABOVE` via `xprop` — o navegador roda como cliente Wayland nativo, fora do
+alcance do `xdotool`/XWayland que as sessões anteriores usaram com sucesso (nelas a tela estava
+livre). Interação por teclado (Tab/Enter, sem mouse) conseguiu confirmar visualmente o toggle de
+Modo Avançado funcionando antes do foco ser roubado de novo. Confirmado com o usuário via
+`AskUserQuestion`: fechar esta leva com a cobertura de testes automatizados como verificação,
+sem a checagem visual ao vivo que todas as sessões anteriores fizeram — vale repetir numa sessão
+futura com a tela livre.
+
+Detalhes técnicos completos em `ARCHITECTURE.md` §Git Engine (subseção "Criar/trocar de
+branch"); checklist atualizado em `PHASE.md` Fase 6; nota de reordenação em `PHASE.md`/
+`OVERVIEW.md`.
+
+**Estado ao final da sessão**: "Criar/trocar de branch" implementado e coberto por teste
+automatizado, pendente de verificação visual ao vivo numa sessão futura. Próximos itens da Fase
+6: comparação entre branches, investigar se/como merge faz sentido pra arquivos de mundo (ainda
+em aberto). Game Runner e login Microsoft seguem pausados/bloqueados por `PENDING.md` #1;
+decisão de escopo do CurseForge segue em aberto, não urgente.

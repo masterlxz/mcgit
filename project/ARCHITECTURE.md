@@ -507,6 +507,74 @@ intacto, liberado o lock → delete volta a funcionar.
 
 ---
 
+### Criar/trocar de branch — implementado (Sessão 8, 2026-09-01)
+
+Primeiro item da Fase 6 (Branching), puxado pra frente do roadmap a pedido do usuário (ver nota
+de reordenação em `PHASE.md`/`OVERVIEW.md`): priorizar aprofundar versionamento de mundo +
+branches + GUI antes do resto do escopo do launcher. Escopo: só criar e trocar de branch —
+comparação entre branches e a investigação de merge continuam em aberto, não fazem parte desta
+leva.
+
+- **Quatro funções novas em `git.rs`**: `current_branch()` (`git branch --show-current`,
+  funciona mesmo num repo sem nenhum commit — lê o ref simbólico do HEAD, não depende do grafo
+  de commits), `list_branches()` (`git branch --format=%(refname:short)`), `create_branch()`
+  (`git checkout -b <nome>`) e `switch_branch()` (troca pra uma branch já existente).
+- **`create_branch` não precisa de checkpoint nem de checagem de mundo aberto**: como a nova
+  branch nasce apontando pro mesmo commit atual, nenhum arquivo no disco muda de conteúdo —
+  diferente de `switch_branch`, que pode trazer um conteúdo diferente pra árvore de trabalho, daí
+  precisar das duas mesmas guardas do `restore()`/`delete_snapshot()`.
+- **Checkpoint automático antes de trocar** (confirmado com o usuário via `AskUserQuestion`):
+  `switch_branch()` sempre roda `commit(world_dir, "Checkpoint before switching branches")`
+  antes do `git checkout <nome>` — reaproveita o `commit()` já existente, mesmo espírito do
+  backup automático do `restore()`. Sem isso, trocar de branch com mudança pendente
+  frequentemente bateria no erro cru do Git ("local changes would be overwritten by checkout"),
+  já que arquivos de mundo quase sempre se sobrepõem entre branches.
+- **Mesma checagem de mundo aberto** (`is_currently_open`) do `restore()`/`delete_snapshot()`,
+  reaproveitada diretamente por estar no mesmo módulo.
+- **`BranchError`** (novo, em `types.rs`): mesmo formato de `RestoreError`/`DeleteError`
+  (`WorldCurrentlyOpen` + `Git`/`Io` via `#[from]`).
+- **Sem migration nova no `mcgit-db`**: a branch atual é sempre derivada ao vivo via
+  `git branch --show-current`, mesma filosofia de `log()`/`is_repository()` — a tabela `worlds`
+  não guarda nenhum estado de Git além de `git_enabled`.
+- **Testes** (`mcgit-core`): criar branch (troca pra ela, branch antiga continua listada), criar
+  branch num repo sem nenhum commit, trocar com checkpoint (mudança pendente vira commit,
+  conteúdo bate com o da branch de destino), trocar sem checkpoint (sem mudança pendente),
+  trocar bloqueada por mundo aberto (mesmo truque de `flock` externo dos testes de `restore`/
+  `delete`), listagem refletindo todas as branches criadas. 28/28 verdes no crate.
+- **Ponte Tauri**: `list_world_branches` (zipa `current_branch` + `list_branches` num único
+  `BranchDto { name, is_current }` por branch), `create_world_branch` (cria e já retorna a lista
+  atualizada, evitando um round-trip extra do frontend), `switch_world_branch` (retorna
+  `SwitchDto { checkpoint_created, branch }`).
+- **UI**: novo componente `WorldBranches.tsx`, espelhando `WorldHistory.tsx` — formulário de
+  nome de branch nova (mesmo padrão do `SaveSnapshotForm.tsx`), lista de branches com a atual
+  marcada, botão "Switch" por branch não-atual com confirmação inline (nunca modal) antes de
+  trocar, já que trocar de branch muda visivelmente os arquivos do mundo pro jogador — mesma
+  razão pela qual `restore`/`delete` também confirmam inline mesmo sem serem destrutivos no
+  nível do Git.
+- **Seção de branches só em Modo Avançado** (confirmado com o usuário via `AskUserQuestion`):
+  `WorldList.tsx` usa `useAdvancedMode()` pra esconder a seção inteira ("Show branches" +
+  `WorldBranches`) em Modo Básico — diferente do histórico de snapshots, que fica sempre
+  visível e só esconde detalhes internos. Confirma o que a nota do Modo Básico/Avançado (Sessão
+  7) já antecipava: branches são um recurso de Git ainda escondido, "pra quando forem
+  implementadas, Fase 6+".
+- **Histórico se mantém sincronizado após trocar de branch**: `git log` segue o HEAD atual, então
+  o conteúdo que `list_world_history` retorna muda quando a branch muda. `handleSwitchBranch`
+  em `InstanceDetailScreen.tsx` re-busca o histórico daquele mundo se o painel já estava aberto
+  — mesma classe de bug de painel desatualizado já corrigida na Sessão 5 (lá era ao salvar um
+  snapshot novo), prevenida desde o início desta vez em vez de descoberta depois.
+
+**Verificação ao vivo pela GUI não foi feita nesta sessão**: a tela de desenvolvimento tinha uma
+partida de xadrez ativa no navegador, que roubava o foco da janela do mcgit repetidamente
+(inclusive depois de `windowfocus`/`windowraise`/`_NET_WM_STATE_ABOVE` via `xprop` — o navegador
+é um cliente Wayland nativo, fora do alcance do `xdotool`/XWayland usado nas sessões anteriores),
+tornando cliques e mesmo navegação por teclado pouco confiáveis. Confirmado com o usuário via
+`AskUserQuestion`: aceitar os 28 testes automatizados do `mcgit-core` + typecheck limpo do
+frontend como verificação desta vez, sem a checagem visual ao vivo que todas as sessões
+anteriores fizeram. Vale rodar essa checagem manualmente numa sessão futura, com a tela livre,
+antes de considerar este item no mesmo padrão de confiança dos anteriores.
+
+---
+
 ## Modo Básico/Avançado — implementado (Sessão 7, 2026-08-22, continuação)
 
 `CONTEXT.md` já especificava esse toggle: "avançado expõe Git (commits/branches/remotes/diff)

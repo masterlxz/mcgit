@@ -50,3 +50,27 @@ export function deleteWorldSnapshot(
 ): Promise<void> {
   return invoke("delete_world_snapshot", { instanceId, folderName, commitHash });
 }
+
+export type Branch = { name: string; is_current: boolean };
+
+export function listWorldBranches(instanceId: number, folderName: string): Promise<Branch[]> {
+  return invoke("list_world_branches", { instanceId, folderName });
+}
+
+export function createWorldBranch(
+  instanceId: number,
+  folderName: string,
+  name: string,
+): Promise<Branch[]> {
+  return invoke("create_world_branch", { instanceId, folderName, name });
+}
+
+export type SwitchResult = { checkpoint_created: boolean; branch: string };
+
+export function switchWorldBranch(
+  instanceId: number,
+  folderName: string,
+  name: string,
+): Promise<SwitchResult> {
+  return invoke("switch_world_branch", { instanceId, folderName, name });
+}

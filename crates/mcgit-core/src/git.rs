@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::types::{DeleteError, GitError, RestoreError};
+use crate::types::{BranchError, DeleteError, GitError, RestoreError};
 
 /// Runs `git <args>` in `world_dir`, mapping a failed spawn or a non-zero
 /// exit code to `GitError`. Every function in this module that shells out
@@ -304,6 +304,64 @@ pub fn delete_snapshot(world_dir: &Path, commit_hash: &str) -> Result<(), Delete
     }
 
     Ok(())
+}
+
+/// The name of the branch `world_dir`'s HEAD currently points to. Works even
+/// on a repository with no commits yet, since it just reads HEAD's symbolic
+/// ref name, not anything from the commit graph.
+pub fn current_branch(world_dir: &Path) -> Result<String, GitError> {
+    Ok(trimmed_stdout(run(world_dir, &["branch", "--show-current"])?))
+}
+
+/// Every branch that exists in `world_dir`'s repository.
+pub fn list_branches(world_dir: &Path) -> Result<Vec<String>, GitError> {
+    let output = run(world_dir, &["branch", "--format=%(refname:short)"])?;
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect())
+}
+
+/// Creates `name` as a new branch and switches to it in one step, at
+/// whatever commit `world_dir` is currently on. No safety checkpoint and no
+/// open-world check are needed here: the new branch starts out pointing at
+/// the exact same commit as the current one, so no file on disk changes —
+/// unlike `switch_branch`, which moves to a branch that can have different
+/// content. Git validates `name` itself; an invalid name surfaces as
+/// `GitError::CommandFailed` with Git's own message.
+pub fn create_branch(world_dir: &Path, name: &str) -> Result<(), GitError> {
+    run(world_dir, &["checkout", "-b", name])?;
+    Ok(())
+}
+
+/// Outcome of switching branches: whether pending changes on the branch
+/// being left had to be checkpointed first, and which branch is now current.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwitchOutcome {
+    pub checkpoint: CommitOutcome,
+    pub branch: String,
+}
+
+/// Switches `world_dir` to branch `name`. Refuses if the world looks
+/// currently open in Minecraft, same guard as `restore`/`delete_snapshot` —
+/// switching branches can change file content on disk, just like those do.
+/// Before switching, always saves whatever's pending on the current branch
+/// as a checkpoint, so a switch never fails because of "local changes would
+/// be overwritten" and never silently carries unrelated work onto the
+/// target branch.
+pub fn switch_branch(world_dir: &Path, name: &str) -> Result<SwitchOutcome, BranchError> {
+    if is_currently_open(world_dir)? {
+        return Err(BranchError::WorldCurrentlyOpen);
+    }
+
+    let checkpoint = commit(world_dir, "Checkpoint before switching branches")?;
+    run(world_dir, &["checkout", name])?;
+
+    Ok(SwitchOutcome {
+        checkpoint,
+        branch: name.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -724,5 +782,124 @@ mod tests {
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert!(matches!(result, Err(DeleteError::WorldCurrentlyOpen)));
         assert_eq!(history_len, 1, "delete must not touch history when the world is open");
+    }
+
+    #[test]
+    fn create_branch_switches_to_new_branch() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-branch-create-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        commit(&world_dir, "A").unwrap();
+        let original = current_branch(&world_dir).unwrap();
+
+        create_branch(&world_dir, "experiment").unwrap();
+
+        let now = current_branch(&world_dir).unwrap();
+        let branches = list_branches(&world_dir).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(now, "experiment");
+        assert!(branches.contains(&original));
+        assert!(branches.contains(&"experiment".to_string()));
+    }
+
+    #[test]
+    fn create_branch_works_on_repo_with_no_commits() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-branch-create-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+
+        create_branch(&world_dir, "experiment").unwrap();
+
+        let now = current_branch(&world_dir).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(now, "experiment");
+    }
+
+    #[test]
+    fn switch_branch_creates_checkpoint_when_pending_changes() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-branch-switch-checkpoint-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"main-content").unwrap();
+        commit(&world_dir, "Main content").unwrap();
+        let original = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"experiment-content").unwrap();
+        commit(&world_dir, "Experiment content").unwrap();
+        // Pending, never-saved change on the branch we're about to leave.
+        std::fs::write(world_dir.join("level.dat"), b"uncommitted").unwrap();
+
+        let outcome = switch_branch(&world_dir, &original).unwrap();
+
+        let content = std::fs::read(world_dir.join("level.dat")).unwrap();
+        let history = log(&world_dir).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(outcome.branch, original);
+        match outcome.checkpoint {
+            CommitOutcome::Created(_) => {}
+            CommitOutcome::NothingToCommit => panic!("expected the pending change to be checkpointed"),
+        }
+        assert_eq!(content, b"main-content", "must reflect the target branch's content");
+        assert_eq!(history[0].message, "Main content");
+    }
+
+    #[test]
+    fn switch_branch_no_checkpoint_when_clean() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-branch-switch-clean-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        commit(&world_dir, "A").unwrap();
+        let original = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+
+        let outcome = switch_branch(&world_dir, &original).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(outcome.checkpoint, CommitOutcome::NothingToCommit);
+    }
+
+    #[test]
+    fn switch_branch_refuses_when_world_is_locked() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-branch-switch-locked-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        commit(&world_dir, "A").unwrap();
+        let original = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+
+        let lock_file = std::fs::File::create(world_dir.join("session.lock")).unwrap();
+        lock_file.lock().unwrap();
+
+        let result = switch_branch(&world_dir, &original);
+        let history_len = log(&world_dir).unwrap().len();
+
+        drop(lock_file);
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(matches!(result, Err(BranchError::WorldCurrentlyOpen)));
+        assert_eq!(history_len, 1, "switch must not touch history when the world is open");
+    }
+
+    #[test]
+    fn list_branches_reflects_all_created_branches() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-branch-list-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        commit(&world_dir, "A").unwrap();
+        let original = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment-1").unwrap();
+        switch_branch(&world_dir, &original).unwrap();
+        create_branch(&world_dir, "experiment-2").unwrap();
+
+        let branches = list_branches(&world_dir).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(branches.len(), 3);
+        assert!(branches.contains(&original));
+        assert!(branches.contains(&"experiment-1".to_string()));
+        assert!(branches.contains(&"experiment-2".to_string()));
     }
 }

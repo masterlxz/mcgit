@@ -2,13 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { listInstances, type Instance } from "../../api/instance";
 import {
+  createWorldBranch,
   createWorldSnapshot,
   deleteWorldSnapshot,
   disableWorldVersioning,
   enableWorldVersioning,
+  listWorldBranches,
   listWorldHistory,
   listWorlds,
   restoreWorldVersion,
+  switchWorldBranch,
+  type Branch,
   type Snapshot,
   type World,
 } from "../../api/world";
@@ -21,6 +25,7 @@ export function InstanceDetailScreen() {
   const [instance, setInstance] = useState<Instance | null>(null);
   const [worlds, setWorlds] = useState<World[]>([]);
   const [historyByWorld, setHistoryByWorld] = useState<Record<string, Snapshot[] | undefined>>({});
+  const [branchesByWorld, setBranchesByWorld] = useState<Record<string, Branch[] | undefined>>({});
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -112,6 +117,49 @@ export function InstanceDetailScreen() {
     }
   }
 
+  async function handleShowBranches(folderName: string) {
+    setError(null);
+    try {
+      const branches = await listWorldBranches(instanceId, folderName);
+      setBranchesByWorld((prev) => ({ ...prev, [folderName]: branches }));
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleCreateBranch(folderName: string, name: string) {
+    setError(null);
+    setStatus(null);
+    try {
+      const branches = await createWorldBranch(instanceId, folderName, name);
+      setBranchesByWorld((prev) => ({ ...prev, [folderName]: branches }));
+      setStatus(`Created and switched to branch "${name}".`);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleSwitchBranch(folderName: string, name: string) {
+    setError(null);
+    setStatus(null);
+    try {
+      const result = await switchWorldBranch(instanceId, folderName, name);
+      setStatus(
+        result.checkpoint_created
+          ? `Checkpointed pending changes and switched to "${result.branch}".`
+          : `Switched to "${result.branch}".`,
+      );
+      await handleShowBranches(folderName);
+      // git log follows HEAD, so switching branches changes what the
+      // history panel would show — keep it in sync if it was already open.
+      if (historyByWorld[folderName] !== undefined) {
+        await handleShowHistory(folderName);
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   return (
     <section>
       <p>
@@ -125,11 +173,15 @@ export function InstanceDetailScreen() {
       <WorldList
         worlds={worlds}
         historyByWorld={historyByWorld}
+        branchesByWorld={branchesByWorld}
         onToggleVersioning={handleToggleVersioning}
         onSaveSnapshot={handleSaveSnapshot}
         onShowHistory={handleShowHistory}
         onRestore={handleRestore}
         onDelete={handleDelete}
+        onShowBranches={handleShowBranches}
+        onCreateBranch={handleCreateBranch}
+        onSwitchBranch={handleSwitchBranch}
       />
     </section>
   );

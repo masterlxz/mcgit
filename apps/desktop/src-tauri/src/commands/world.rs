@@ -232,3 +232,102 @@ pub async fn delete_world_snapshot(
 
     Ok(())
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BranchDto {
+    pub name: String,
+    pub is_current: bool,
+}
+
+fn branch_dtos(world_dir: &std::path::Path) -> Result<Vec<BranchDto>, mcgit_core::types::GitError> {
+    let current = mcgit_core::git::current_branch(world_dir)?;
+    let names = mcgit_core::git::list_branches(world_dir)?;
+    Ok(names
+        .into_iter()
+        .map(|name| {
+            let is_current = name == current;
+            BranchDto { name, is_current }
+        })
+        .collect())
+}
+
+/// Lists every branch for a world, marking which one is current. Nothing is
+/// cached in the database — the current branch is always derived live from
+/// Git, same as history.
+#[tauri::command]
+pub async fn list_world_branches(
+    instance_id: i64,
+    folder_name: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<BranchDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        branch_dtos(&world_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+/// Creates a new branch at the world's current commit and switches to it.
+/// Returns the updated branch list so the caller doesn't need a second
+/// round trip.
+#[tauri::command]
+pub async fn create_world_branch(
+    instance_id: i64,
+    folder_name: String,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<BranchDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::create_branch(&world_dir, &name)?;
+        branch_dtos(&world_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SwitchDto {
+    pub checkpoint_created: bool,
+    pub branch: String,
+}
+
+/// Switches a world to a different, already-existing branch. Refuses if the
+/// world looks currently open in Minecraft. Any pending change on the
+/// branch being left is checkpointed automatically first, so this never
+/// fails from "local changes would be overwritten" and never loses work.
+#[tauri::command]
+pub async fn switch_world_branch(
+    instance_id: i64,
+    folder_name: String,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<SwitchDto, String> {
+    let instances_dir = state.instances_dir.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::switch_branch(&world_dir, &name)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(SwitchDto {
+        checkpoint_created: matches!(outcome.checkpoint, mcgit_core::git::CommitOutcome::Created(_)),
+        branch: outcome.branch,
+    })
+}

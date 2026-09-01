@@ -99,6 +99,17 @@ Microsoft, estratégia de armazenamento de `.mca`, e revisão legal/licenciament
 
 ---
 
+> **Reordenação (Sessão 8, 2026-09-01)**: a partir desta sessão, o usuário pediu para priorizar
+> versionamento de mundo (incluindo branches) e a GUI, à frente do resto do escopo do launcher.
+> A numeração das fases abaixo continua sendo a organização temática original — não foi
+> renumerada, pra não invalidar todas as referências cruzadas já escritas (`SESSIONS.md`,
+> `ARCHITECTURE.md`, commits) — mas a **ordem de execução real** passa a ser: fechar os itens de
+> Git ainda pendentes na Fase 1 (validações de segurança, testes de restauração) → **Fase 6
+> (Branching)**, começando por "criar/trocar branch" → Fase 2 (qualidade do versionamento:
+> auto-snapshot, auto-gc) → Fase 4 (diff entre snapshots) → só então retomar Fase 3 (mods), Fase
+> 5 (backup/sync) e Fase 7 (Arweave) na ordem antiga. Login Microsoft/Game Runner continuam
+> pausados por bloqueio externo (`PENDING.md` #1), independente desta reordenação.
+
 ## Fase 1 — MVP do Launcher
 
 **Objetivo**: um launcher mínimo mas real — login, instalar e jogar Vanilla, e versionar o
@@ -309,7 +320,37 @@ mcgit checkout experiment
 mcgit checkout main
 ```
 
-- [ ] Criar/trocar de branch (na GUI: "Criar branch experimental" + "Voltar para main")
+- [x] Criar/trocar de branch, implementado (Sessão 8, 2026-09-01), primeiro item da trilha
+  priorizada de versionamento+branches (ver nota de reordenação no topo deste arquivo). `git.rs`
+  ganha `current_branch()` (`git branch --show-current`, funciona mesmo sem nenhum commit ainda,
+  já que só lê o ref simbólico do HEAD), `list_branches()` (`git branch --format`),
+  `create_branch()` (`git checkout -b <nome>` — cria e já troca num único passo atômico; não
+  precisa de checkpoint de segurança nem de checagem de mundo aberto, porque a nova branch
+  aponta pro mesmo commit atual, então nenhum arquivo muda de conteúdo) e `switch_branch()`
+  (troca pra uma branch já existente). Novo erro `BranchError` (mesmo formato de
+  `RestoreError`/`DeleteError`). Nenhuma migration nova no `mcgit-db` — a branch atual é sempre
+  derivada ao vivo via `git branch --show-current`, mesma filosofia já usada por `log()`.
+  **Dois pontos de design confirmados com o usuário via `AskUserQuestion`**: (1) trocar de
+  branch faz um checkpoint automático das mudanças pendentes antes (reaproveita `commit()`,
+  mesmo padrão do backup do `restore()`) — nunca falha por "local changes would be
+  overwritten", nunca perde nada; (2) a seção de branches na GUI fica visível só em Modo
+  Avançado (`WorldList.tsx` usa `useAdvancedMode()` pra esconder a seção inteira, diferente do
+  histórico de snapshots, que fica sempre visível) — confirma o que o `ARCHITECTURE.md` já
+  antecipava desde a Sessão 7. Novos comandos Tauri `list_world_branches`/`create_world_branch`/
+  `switch_world_branch`; novo componente `WorldBranches.tsx` (espelha `WorldHistory.tsx`: dumb/
+  presentational, confirmação inline sem modal antes de trocar de branch, já que trocar muda
+  visivelmente os arquivos do mundo pro jogador, mesma razão do `restore`/`delete`). Trocar de
+  branch também re-busca o histórico de snapshots se o painel já estava aberto (`git log` segue
+  o HEAD atual, então muda de conteúdo quando a branch muda — mesma classe de bug de painel
+  desatualizado já corrigida na Sessão 5, agora prevenida desde o início). 6 testes novos em
+  `git.rs` cobrindo criação, troca com/sem mudança pendente, bloqueio por mundo aberto e listagem
+  — os 28 testes de `git.rs` passam. **Verificação ao vivo pela GUI não foi feita nesta sessão**:
+  a tela de desenvolvimento tinha uma partida de xadrez ativa roubando o foco da janela
+  repetidamente, tornando a interação pela GUI real pouco confiável; o usuário confirmou (via
+  `AskUserQuestion`) aceitar a cobertura de testes automatizados como verificação desta vez, sem
+  a checagem visual ao vivo que as sessões anteriores sempre fizeram. Vale rodar essa checagem
+  manualmente numa sessão futura antes de considerar o item 100% fechado no mesmo padrão de
+  confiança dos itens anteriores.
 - [ ] Comparação entre branches/versões
 - [ ] Investigar se/como merge faz sentido tecnicamente para arquivos de mundo (não assumir que é seguro — ver `ARCHITECTURE.md`)
 

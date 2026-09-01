@@ -28,17 +28,26 @@ Stack principal:
 
 ```
 Fase 0  — Pesquisa & Arquitetura                    [x] Encerrada (3 itens adiados, não-bloqueantes — ver PHASE.md)
-Fase 1  — MVP do Launcher                           [~] Em andamento (Java Manager, Instância+Vanilla, Ativar/desativar Git — ver PHASE.md)
-Fase 2  — Qualidade do Versionamento                [ ] Não iniciada
-Fase 3  — Modloaders, Mods & Modpacks               [ ] Não iniciada
-Fase 4  — Minecraft-Aware World Diffing             [ ] Não iniciada
-Fase 5  — Skins, Backup Inteligente & Sincronização [ ] Não iniciada
-Fase 6  — Branching de Mundos                       [ ] Não iniciada
-Fase 7  — Arweave + TruthID                         [ ] Não iniciada
+Fase 1  — MVP do Launcher                           [~] Em andamento (Java Manager, Instância+Vanilla, Git Engine básico completo, GUI inicial, Modo Básico/Avançado — ver PHASE.md)
+Fase 2  — Qualidade do Versionamento                [ ] Priorizada (ver nota de reordenação abaixo)
+Fase 3  — Modloaders, Mods & Modpacks               [ ] Não iniciada (adiada — ver nota abaixo)
+Fase 4  — Minecraft-Aware World Diffing             [ ] Priorizada (ver nota de reordenação abaixo)
+Fase 5  — Skins, Backup Inteligente & Sincronização [ ] Não iniciada (adiada — ver nota abaixo)
+Fase 6  — Branching de Mundos                       [~] Em andamento (criar/trocar branch implementado — ver PHASE.md)
+Fase 7  — Arweave + TruthID                         [ ] Não iniciada (adiada — ver nota abaixo)
 Fase 8  — Compartilhamento & Reprodutibilidade      [ ] Não iniciada
 Fase 9  — Servidores                                [ ] Não iniciada
 Fase 10 — Colaboração, Marketplace & Social         [ ] Não iniciada
 ```
+
+**Nota de reordenação (Sessão 8, 2026-09-01)**: a numeração das fases é histórica, não é mais a
+ordem de execução. A partir desta sessão, o usuário pediu para focar em aprofundar o
+versionamento de mundo (incluindo branches) e a GUI antes de expandir pro resto do launcher.
+Ordem de execução real agora: terminar o que resta da Fase 1 relacionado a Git (validações de
+segurança, testes de restauração) → **Fase 6 (Branching)**, começando por "criar/trocar branch"
+→ Fase 2 (qualidade do versionamento: auto-snapshot, auto-gc) → Fase 4 (diff entre snapshots) →
+só depois retomar Fase 3/5/7 (mods, backup/sync, Arweave) na ordem antiga. Ver `PHASE.md` para o
+detalhe completo dessa decisão.
 
 Ver `PHASE.md` para o detalhamento de cada fase (reconciliação completa entre o roadmap
 original do mcgit-ferramenta e o roadmap do launcher documentada lá).
