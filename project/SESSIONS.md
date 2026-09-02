@@ -997,3 +997,87 @@ visualização gráfica — próximos passos naturais dessa mesma fase, ou virar
 (auto-snapshot/auto-gc) se o usuário preferir. Game Runner e login Microsoft seguem
 pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não
 urgente.
+
+---
+
+## Sessão 9 — 2026-09-02 — Fase 4: parser NBT completo (diff bloco a bloco)
+
+Retomada direta ("bora continuar?"), usuário escolheu via `AskUserQuestion` seguir na Fase 4 com o
+item que tinha ficado em aberto na sessão anterior: parser NBT completo. Modo ensino aplicado (área
+nova — formato de bloco do Minecraft): explicado o conceito de paletted container (palette +
+índices bit-packed) com analogia antes de qualquer código, confirmado pelo usuário, só então
+combinado o escopo da fatia via uma segunda pergunta (lista de blocos mudados com cap, dentre três
+opções).
+
+Antes de escrever o decoder, investigado ao vivo contra um chunk real do mundo de teste
+(`benchmarks/worlds/medieval`, 1.21.x) — o `mca-bench inspect` ganhou uma extensão pra listar
+seções e palettes. Dois achados guiaram o design: seções com um único tipo de bloco não têm `data`
+nenhum (o Minecraft não guarda índice se só existe uma opção); e a matemática do bit-packing bateu
+exatamente contra um caso real (seção com 18 tipos de bloco → 5 bits/bloco → 342 longs, igual ao
+observado). Também notado que o mesmo `Name` aparece repetido na palette com `Properties`
+diferentes — a identidade de um bloco pro diff é `Name`+`Properties`, não só o nome.
+
+Implementado `mcgit-world::chunk` (decode de seção/chunk + `diff_chunk_blocks`), fiação em
+`mcgit-core::git` (`diff_chunk_blocks`, `read_chunk_nbt`; `fastanvil` virou dependency de verdade,
+não só dev-dependency), comando Tauri `diff_world_chunk_blocks`, e um botão "Show blocks" na UI
+por chunk alterado (dentro do "Show chunks" já existente), com lista limitada a 50 itens. 8 testes
+novos (7 em `mcgit-world`, 1 em `mcgit-core`), todos os 55 testes do workspace passando.
+
+Verificação ao vivo: sem ferramenta de controle de tela nesta sessão (diferente de sessões
+anteriores), o app foi subido via `npx tauri dev` na tela real do usuário, que clicou e conferiu
+pessoalmente. Cenário de teste montado direto no filesystem/Git (reaproveitando a instância "nome"
+já existente): mundo `medieval` copiado pra dentro dela como `TestWorld`, versionado, branch
+`experiment` com um bloco só editado (chunk (0,0), posição (0,0,0), deepslate → stone) via um
+comando novo no `mca-bench` (`set-block`, sobrescreve um índice já existente na palette sem
+recodificá-la). Usuário confirmou que "Compare" → "Show chunks" → "Show blocks" mostrou a mudança
+esperada, uma linha só ("deu boa").
+
+Detalhes completos em `ARCHITECTURE.md` §Fase 4 (subseção "Parser NBT completo — diff bloco a
+bloco"); checklist fechado em `PHASE.md` Fase 4 (item agora `[x]`).
+
+**Estado ao final desta parte da sessão**: 2 dos 4 itens da Fase 4 completos (diff por chunk,
+parser NBT completo). Restam estatísticas de mundo por snapshot e visualização gráfica de
+verdade — próximos passos naturais dessa mesma fase — ou virar pra Fase 2 (auto-snapshot/auto-gc),
+a critério do usuário. Game Runner e login Microsoft seguem pausados/bloqueados por `PENDING.md`
+#1; decisão de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 9 (continuação) — 2026-09-02 — Fase 4: estatísticas de mundo por snapshot (blocos)
+
+Usuário pediu pra seguir na Fase 4; escolhido "Estatísticas de mundo por snapshot" entre os dois
+itens restantes (o outro, visualização gráfica, fica pra depois). Também registrado — não
+executado agora — um pedido do usuário pra, depois de fechar essa leva de features, fazer uma
+passada de UX/identidade visual de verdade no app (mcgit = vermelho, ver
+`user_project_ecosystem` na memória); guardado como memória de projeto separada
+(`project_mcgit_ux_polish`), não uma tarefa desta sessão.
+
+Antes de codar, uma decisão de design foi explicada e adotada: a contagem agrupa blocos só por
+`Name`, ignorando `Properties` — diferente da identidade completa usada no diff bloco a bloco da
+fatia anterior. Faz sentido pra diff (perder que um forno acendeu seria um bug), mas pra "quantos
+blocos de cada tipo existem" só atrapalharia.
+
+Implementado reaproveitando o decoder existente: `count_section_blocks`/`count_chunk_blocks` em
+`mcgit-world::chunk` somam por índice de palette em vez de materializar os 4096 nomes por posição
+(mais barato); `count_region_blocks` em `region.rs` soma isso pra toda região. `mcgit-core` ganha
+`world_block_stats` (soma entre todos os arquivos de `region/` de um snapshot, via `git ls-tree`
+novo, `list_files`) e comando Tauri correspondente. UI: botão "Show stats" por snapshot na tela de
+histórico (`WorldHistory`) — diferente do resto da Fase 4/6, fica disponível também no Modo
+Básico, já que não depende de entender branches. 8 testes novos (7 em `mcgit-world`, 1 em
+`mcgit-core`), todos os 63 testes do workspace passando.
+
+Verificado ao vivo no mesmo app já rodando (hot-reload pegou as mudanças sem reiniciar): usuário
+abriu "Show stats" no snapshot mais recente do `TestWorld` (mundo `medieval` real) e confirmou uma
+lista de blocos de verdade, ordenada do mais comum pro menos comum ("deu boa").
+
+Detalhes completos em `ARCHITECTURE.md` §Fase 4 (subseção "Estatísticas de mundo por snapshot —
+blocos"); checklist atualizado em `PHASE.md` Fase 4 (item marcado `[~]` — blocos feitos, entidades
+e estruturas ficam pra depois).
+
+**Estado ao final da sessão**: 3 dos 4 itens da Fase 4 com progresso (diff por chunk e parser NBT
+completo `[x]`, estatísticas `[~]` — só blocos, não entidades/estruturas). Resta só visualização
+gráfica de verdade nesta fase, ou virar pra Fase 2 (auto-snapshot/auto-gc), a critério do usuário.
+Pendente pra mais adiante: passada de UX/identidade visual no app inteiro (registrado em memória,
+não em `PENDING.md` — não é um bloqueio, é uma preferência de sequenciamento do usuário). Game
+Runner e login Microsoft seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo do
+CurseForge segue em aberto, não urgente.

@@ -66,6 +66,8 @@ pub fn run() {
             commands::world::finish_world_merge,
             commands::world::abort_world_merge,
             commands::world::diff_world_region_chunks,
+            commands::world::diff_world_chunk_blocks,
+            commands::world::world_block_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

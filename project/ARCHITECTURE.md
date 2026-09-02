@@ -875,6 +875,124 @@ chunks alterado e commitado lá; de volta em `main`, "Compare" mostrou
 `(0, 0) changed` como único resultado — o chunk que não mudou não apareceu na lista, confirmando
 o comportamento correto ponta a ponta (Git real + Anvil real + UI real).
 
+### Parser NBT completo — diff bloco a bloco (Sessão 9, 2026-09-02)
+
+Segunda fatia da Fase 4, escolhida com o usuário logo após o diff por chunk: decodificar de
+verdade o `block_states` bit-packed de cada seção pra dizer **qual bloco específico mudou** (não
+só "esse chunk mudou"). Investigação primeiro (modo ensino): inspecionado ao vivo um chunk real
+do mundo de teste (`benchmarks/worlds/medieval`, 1.21.x) via uma extensão nova do `mca-bench`
+(`inspect` passou a listar seções e suas palettes) — confirmou o formato paletted container
+(`palette` + `data`) e dois casos reais que guiaram o design:
+
+- **Palette de 1 tipo só não tem `data`** — quando a seção inteira é um único bloco (ex.: ar),
+  o Minecraft nem guarda índices. Confirmado ao vivo: seções Y=6..19 do chunk real tinham
+  `palette` com 1 entrada e `data` com 0 longs.
+- **`bits_per_block = max(4, ceil(log2(palette.len())))`, `entries_per_long = 64 / bits_per_block`,
+  sem entrada cruzar fronteira de `long`** — confirmado numericamente contra o mesmo chunk real:
+  seção Y=4 com palette de 18 tipos precisa de 5 bits/bloco → 12 blocos por long →
+  `ceil(4096/12) = 342` longs, batendo exatamente com os 342 longs observados no `data` real.
+- **Identidade de bloco não é só `Name`** — a mesma palette tinha `minecraft:oak_leaves`
+  repetido várias vezes (variantes diferentes de `Properties`, ex. `persistent`/`distance`).
+  Decisão: a chave de diff é `Name` + `Properties` serializadas em ordem estável
+  (`"minecraft:furnace[facing=north,lit=true]"`), não só o nome.
+
+- **`crates/mcgit-world/src/chunk.rs`** (novo módulo): `decode_section_blocks` decodifica uma
+  seção pros 4096 blocos que ela contém (ordem `index = local_y*256 + local_z*16 + local_x`,
+  igual o próprio Minecraft usa), tratando o caso de palette de 1 tipo à parte.
+  `decode_chunk_sections` parseia o NBT bruto de um chunk e decodifica todas as seções, indexadas
+  pela Y absoluta da seção; uma seção sem `block_states` (fora do range gerado) decodifica como ar
+  puro. `diff_chunk_blocks(from_nbt, to_nbt, chunk_x, chunk_z)` compara as seções presentes **nos
+  dois lados** posição a posição, devolvendo `BlockDiff { x, y, z, from, to }` em coordenadas
+  absolutas do mundo — **seções que só existem de um lado (mudança na altura gerada do chunk) são
+  ignoradas nesta fatia**, caso raro deixado pra depois. `WorldError` ganha `Nbt` (erros de parse
+  do `fastnbt`) e `Shape` (formato inesperado dentro do NBT).
+- **`crates/mcgit-core`**: `fastanvil` sobe de dev-dependency pra dependency de verdade (agora é
+  usado em código de produção, não só teste). `diff_chunk_blocks(world_dir, from, to, path,
+  chunk_x, chunk_z)` resolve `region_x`/`region_z` do nome do arquivo (mesma lógica de
+  `diff_region_chunks`), converte as coordenadas absolutas do chunk pra locais `0..32` dentro da
+  região, e usa a nova função auxiliar `read_chunk_nbt` (busca a região via `blob_contents`, abre
+  com `fastanvil::Region::from_stream`, extrai o NBT bruto de um chunk local) pros dois lados
+  antes de delegar pro `mcgit_world::diff_chunk_blocks`.
+- **Testes**: `mcgit-world` (+7, chunk.rs) — palette de 1 tipo sem `data` decodifica uniforme;
+  palette de 18 tipos/5 bits (espelhando a seção real Y=4) decodifica certo, inclusive nas duas
+  pontas do array; `Name`+`Properties` iguais/diferentes geram identidades diferentes; diff reporta
+  só o bloco que mudou; seções só de um lado são ignoradas; um chunk lido de volta de uma região
+  `.mca` real (via `Region::create`/`write_chunk`/`read_chunk`) decodifica certo, ponta a ponta.
+  `mcgit-core` (+1) — histórico Git real com região sintética (palette de 2 tipos, 4096 blocos
+  virados de stone pra air numa branch), `diff_chunk_blocks` reportando os 4096 blocos certos, nas
+  coordenadas absolutas certas.
+- **Ponte Tauri**: `diff_world_chunk_blocks` (mesmos parâmetros de `diff_world_region_chunks`, mais
+  `chunk_x`/`chunk_z` — os mesmos que `diff_world_region_chunks` já reporta pra um chunk
+  "changed").
+- **UI**: dentro do "Show chunks" (Fase 4, primeira fatia), cada chunk com status `changed` ganha
+  um botão "Show blocks" — expande inline a lista de blocos que mudaram (`"(x, y, z): de → para"`),
+  limitada a 50 itens com um "...e N mais" se passar disso.
+- **Fora de escopo desta fatia**: seções presentes só de um lado (chunk cuja altura gerada mudou);
+  crescer a palette (só compara o que já está decodificado — não é um problema de escrita, só de
+  leitura, então não se aplica aqui); estatísticas por snapshot e visualização gráfica de verdade
+  (ainda os 2 itens restantes do checklist da Fase 4).
+
+**Verificado ao vivo pela GUI real** (app rodando via `npx tauri dev` na tela do usuário — sem
+ferramenta de controle de tela nesta sessão, o usuário clicou e conferiu pessoalmente): mundo real
+de teste (`medieval`) copiado pra dentro de uma instância já existente, versionado, branch
+`experiment` criada a partir de `main`. Editado um bloco só — chunk (0,0), seção Y=0, posição
+absoluta (0,0,0) — de `minecraft:deepslate` pra `minecraft:stone`, via um comando novo no
+`mca-bench` (`set-block`, sobrescreve um índice específico do `data` bit-packed reaproveitando uma
+entrada já existente na palette, sem precisar recodificá-la). "Compare" → "Show chunks" → "Show
+blocks" mostrou exatamente a linha esperada, uma única mudança. Usuário confirmou ("deu boa").
+
+### Estatísticas de mundo por snapshot — blocos (Sessão 9, 2026-09-02)
+
+Terceira fatia da Fase 4, escolhida com o usuário logo após o parser NBT completo: em vez de
+comparar duas branches, contar os blocos de **um** snapshot só — "quantos de cada tipo de bloco
+existem nesse mundo". Reaproveita o mesmo decoder de `block_states` construído na fatia anterior,
+mas como agregação em vez de diff.
+
+- **Decisão de design, explícita pro usuário antes de codar**: a contagem agrupa só por `Name`,
+  ignorando `Properties` — diferente da identidade usada no diff bloco a bloco. Pro diff, um forno
+  aceso e apagado são blocos diferentes (perder essa mudança seria um bug); pra "quantos fornos
+  existem", separar por aceso/apagado só atrapalharia — o jogador quer saber "quantos `stone`",
+  não quantas variantes de propriedade.
+- **`crates/mcgit-world/src/chunk.rs`**: `count_section_blocks` talha uma seção por índice de
+  palette em vez de identidade por posição — nunca materializa os 4096 nomes por seção (como
+  `decode_section_blocks` faz pro diff), só incrementa um contador por slot de palette conforme
+  decodifica cada índice bit-packed, e só no fim mapeia slot→nome pra somar no total. Mais barato
+  que reaproveitar o decoder de diff, já que a palette de uma seção costuma ter só dezenas de
+  entradas apesar dos 4096 blocos. `count_chunk_blocks` (`pub(crate)`) soma isso por todas as
+  seções de um chunk; uma seção sem `block_states` conta como ar puro, igual o decode de diff.
+- **`crates/mcgit-world/src/region.rs`**: `count_region_blocks` abre uma região e soma
+  `count_chunk_blocks` de todo chunk gerado (dos 1024 slots possíveis) — o análogo, pra um lado
+  só, do `diff_region_chunks` que já existia.
+- **`crates/mcgit-core`**: `world_block_stats(world_dir, git_ref)` lista todo arquivo dentro de
+  `region/` num snapshot via `git ls-tree -r --name-only <ref> -- region/` (função nova,
+  `list_files`, generalizável pra outros prefixos no futuro), busca o conteúdo de cada um
+  (`blob_contents`, já existente), soma as contagens de `mcgit_world::count_region_blocks` de
+  todos os arquivos, e devolve ordenado do mais comum pro menos comum (empate quebrado por nome,
+  pra ordem estável).
+- **Testes**: `mcgit-world` (+7) — seção de palette única, palette multi-entrada (espelhando a
+  seção real de 18 tipos/5 bits da fatia anterior), `Properties` diferentes colapsando no mesmo
+  nome, soma entre seções de um chunk, soma entre chunks de uma região, região vazia devolvendo
+  contagem vazia. `mcgit-core` (+1) — histórico Git real com dois arquivos de região diferentes
+  (`r.0.0.mca` todo pedra, `r.1.0.mca` todo terra), `world_block_stats` somando os dois e
+  ordenando corretamente.
+- **Ponte Tauri**: `world_block_stats(instance_id, folder_name, commit_hash)` — recebe o hash do
+  snapshot diretamente (não branch atual + branch alvo, como o diff), já que estatística é sobre
+  **um** snapshot, não uma comparação.
+- **UI**: botão "Show stats" por snapshot em `WorldHistory` (tela de histórico, ao lado de
+  Restore/Delete) — diferente do "Show chunks"/"Show blocks" da Fase 6/4 (que só existem no Modo
+  Avançado, dentro de branches), esta fica disponível também no Modo Básico, já que ver
+  estatísticas do mundo atual não exige entender branches. Lista limitada a 20 tipos de bloco
+  (já vem ordenada do mais comum, então o corte cobre a parte útil), com contagem formatada
+  (`1.234 × minecraft:stone`).
+- **Fora de escopo desta fatia**: entidades e estruturas (só blocos); dimensões Nether/End e
+  `entities/`/`poi/` (mesmo escopo do `region/` principal já usado pelo resto da Fase 4).
+
+**Verificado ao vivo pela GUI real** (mesmo app já rodando via `npx tauri dev`, hot-reload pegou
+as mudanças de back e frontend sem precisar reiniciar): usuário abriu "Show history" → "Show
+stats" no snapshot mais recente do mundo `TestWorld` (o mundo `medieval` real, com vários tipos de
+bloco de verdade — pedra, minérios, madeira etc.) e confirmou que apareceu uma lista de blocos de
+verdade, ordenada do mais comum pro menos comum ("deu boa").
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

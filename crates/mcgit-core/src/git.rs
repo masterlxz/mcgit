@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -439,6 +440,85 @@ pub fn diff_region_chunks(
 
     mcgit_world::diff_region_chunks(&from_bytes, &to_bytes, region_x, region_z)
         .map_err(|e| GitError::CommandFailed(e.to_string()))
+}
+
+/// Diffs one chunk's blocks between `from` and `to` — which blocks (by
+/// absolute world position) actually changed, and to/from what. `path` is
+/// the region file the chunk lives in (e.g. `"region/r.0.0.mca"`);
+/// `chunk_x`/`chunk_z` are the chunk's *absolute* coordinates, the same ones
+/// `diff_region_chunks` reports for a chunk marked `Changed`.
+pub fn diff_chunk_blocks(
+    world_dir: &Path,
+    from: &str,
+    to: &str,
+    path: &str,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> Result<Vec<mcgit_world::BlockDiff>, GitError> {
+    let filename = path.rsplit('/').next().unwrap_or(path);
+    let (region_x, region_z) = mcgit_world::parse_region_coords(filename)
+        .ok_or_else(|| GitError::CommandFailed(format!("not a region file path: {path}")))?;
+    let local_x = (chunk_x - region_x * 32) as usize;
+    let local_z = (chunk_z - region_z * 32) as usize;
+
+    let from_chunk = read_chunk_nbt(world_dir, from, path, local_x, local_z)?;
+    let to_chunk = read_chunk_nbt(world_dir, to, path, local_x, local_z)?;
+
+    mcgit_world::diff_chunk_blocks(&from_chunk, &to_chunk, chunk_x, chunk_z)
+        .map_err(|e| GitError::CommandFailed(e.to_string()))
+}
+
+/// Fetches `path` (a region file) as it exists at `git_ref` and pulls out
+/// the raw NBT bytes of one chunk (local `0..32` coordinates within that
+/// region) from it.
+fn read_chunk_nbt(
+    world_dir: &Path,
+    git_ref: &str,
+    path: &str,
+    local_x: usize,
+    local_z: usize,
+) -> Result<Vec<u8>, GitError> {
+    let region_bytes = blob_contents(world_dir, git_ref, path)?;
+    let mut region = fastanvil::Region::from_stream(std::io::Cursor::new(region_bytes))
+        .map_err(|e| GitError::CommandFailed(e.to_string()))?;
+    region
+        .read_chunk(local_x, local_z)
+        .map_err(|e| GitError::CommandFailed(e.to_string()))?
+        .ok_or_else(|| GitError::CommandFailed(format!("chunk ({local_x},{local_z}) not found in {path}@{git_ref}")))
+}
+
+/// Lists every file under `prefix` as it exists at `git_ref` (e.g. `"region/"`
+/// -> every `.mca` file, `entities/`, `poi/`, ...), via
+/// `git ls-tree -r --name-only <ref> -- <prefix>`.
+fn list_files(world_dir: &Path, git_ref: &str, prefix: &str) -> Result<Vec<String>, GitError> {
+    let output = run(world_dir, &["ls-tree", "-r", "--name-only", git_ref, "--", prefix])?;
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect())
+}
+
+/// Aggregates block counts across every region file in `region/`, for the
+/// world as it existed at `git_ref` — a single snapshot's totals, not a diff
+/// between two. Sorted most common block first (ties broken by name, for a
+/// stable order). Only the `region/` folder — not `DIM-1/`/`DIM1/`
+/// (Nether/End) or `entities/`/`poi/` — same scope as `diff_region_chunks`.
+pub fn world_block_stats(world_dir: &Path, git_ref: &str) -> Result<Vec<(String, u64)>, GitError> {
+    let paths = list_files(world_dir, git_ref, "region/")?;
+
+    let mut totals: HashMap<String, u64> = HashMap::new();
+    for path in paths {
+        let bytes = blob_contents(world_dir, git_ref, &path)?;
+        let counts =
+            mcgit_world::count_region_blocks(&bytes).map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        for (name, count) in counts {
+            *totals.entry(name).or_insert(0) += count;
+        }
+    }
+
+    let mut stats: Vec<(String, u64)> = totals.into_iter().collect();
+    stats.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    Ok(stats)
 }
 
 /// Lists every file that differs between `from` and `to`, with its size on
@@ -1565,5 +1645,100 @@ mod tests {
         assert_eq!(diffs[0].chunk_x, 0);
         assert_eq!(diffs[0].chunk_z, 0);
         assert_eq!(diffs[0].status, mcgit_world::ChunkStatus::Changed);
+    }
+
+    /// Builds a region with one chunk containing a single section (`Y=0`)
+    /// whose every block is `stone_index` into `palette` — mirrors the
+    /// single-entry-palette shape (no `data` array) when `palette.len() ==
+    /// 1`, and a real bit-packed one otherwise.
+    fn build_region_with_chunk_block(local_x: usize, local_z: usize, palette: &[&str], block_index: usize) -> Vec<u8> {
+        use std::collections::HashMap;
+        use std::io::Cursor;
+
+        let palette_values: Vec<fastnbt::Value> = palette
+            .iter()
+            .map(|name| {
+                let mut entry = HashMap::new();
+                entry.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
+                fastnbt::Value::Compound(entry)
+            })
+            .collect();
+
+        let mut block_states = HashMap::new();
+        block_states.insert("palette".to_string(), fastnbt::Value::List(palette_values));
+        if palette.len() > 1 {
+            // Every one of the 4096 positions points at `block_index`,
+            // 4 bits each (fits any palette used in these tests) packed
+            // 16-to-a-long, matching the real non-straddling scheme.
+            let mut long: i64 = 0;
+            for i in 0..16 {
+                long |= (block_index as i64) << (i * 4);
+            }
+            let data = vec![long; 256];
+            block_states.insert(
+                "data".to_string(),
+                fastnbt::Value::LongArray(fastnbt::LongArray::new(data)),
+            );
+        }
+
+        let mut section = HashMap::new();
+        section.insert("Y".to_string(), fastnbt::Value::Byte(0));
+        section.insert("block_states".to_string(), fastnbt::Value::Compound(block_states));
+
+        let mut chunk = HashMap::new();
+        chunk.insert("sections".to_string(), fastnbt::Value::List(vec![fastnbt::Value::Compound(section)]));
+        let chunk_bytes = fastnbt::to_bytes(&fastnbt::Value::Compound(chunk)).unwrap();
+
+        let mut region = fastanvil::Region::create(Cursor::new(Vec::new())).unwrap();
+        region.write_chunk(local_x, local_z, &chunk_bytes).unwrap();
+        region.into_inner().unwrap().into_inner()
+    }
+
+    #[test]
+    fn diff_chunk_blocks_reports_the_block_that_changed_in_a_real_git_history() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-chunk-block-diff-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        std::fs::create_dir_all(world_dir.join("region")).unwrap();
+        init(&world_dir).unwrap();
+
+        let base = build_region_with_chunk_block(0, 0, &["minecraft:stone", "minecraft:air"], 0);
+        std::fs::write(world_dir.join("region").join("r.0.0.mca"), &base).unwrap();
+        commit(&world_dir, "Base region").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+
+        let changed = build_region_with_chunk_block(0, 0, &["minecraft:stone", "minecraft:air"], 1);
+        std::fs::write(world_dir.join("region").join("r.0.0.mca"), &changed).unwrap();
+        commit(&world_dir, "Dig out chunk (0,0)").unwrap();
+
+        let diffs = diff_chunk_blocks(&world_dir, &main, "experiment", "region/r.0.0.mca", 0, 0).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(diffs.len(), 4096, "every block in the section was flipped from stone to air");
+        assert!(diffs.iter().all(|d| d.from == "minecraft:stone" && d.to == "minecraft:air"));
+        assert!(diffs.iter().all(|d| (0..16).contains(&d.x) && (0..16).contains(&d.z) && (0..16).contains(&d.y)));
+    }
+
+    #[test]
+    fn world_block_stats_sums_across_region_files_sorted_most_common_first() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-block-stats-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        std::fs::create_dir_all(world_dir.join("region")).unwrap();
+        init(&world_dir).unwrap();
+
+        // r.0.0.mca: one chunk, all stone (single-entry palette, no `data`).
+        let region_a = build_region_with_chunk_block(0, 0, &["minecraft:stone"], 0);
+        std::fs::write(world_dir.join("region").join("r.0.0.mca"), &region_a).unwrap();
+        // r.1.0.mca: one chunk, all dirt — a second region file, to confirm
+        // totals are summed across files, not just within one.
+        let region_b = build_region_with_chunk_block(0, 0, &["minecraft:dirt"], 0);
+        std::fs::write(world_dir.join("region").join("r.1.0.mca"), &region_b).unwrap();
+        commit(&world_dir, "Two regions").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+
+        let stats = world_block_stats(&world_dir, &main).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(stats, vec![("minecraft:dirt".to_string(), 4096), ("minecraft:stone".to_string(), 4096)]);
     }
 }

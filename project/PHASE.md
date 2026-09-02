@@ -302,10 +302,25 @@ Antiga "Fase 3 — Minecraft-aware" do mcgit-ferramenta (v1.0).
   Nether/End (só a pasta `region/` principal). Verificado ao vivo pela GUI real (tela livre):
   duas branches com um arquivo de região sintético editado num chunk só, comparação mostrando
   corretamente `(0, 0) changed` e nada mais. Detalhes completos em `ARCHITECTURE.md` §Fase 4.
-- [ ] Parser NBT completo (reaproveitar aprendizado da Fase 0) — próximo passo natural: hoje o
-  diff por chunk só compara bytes brutos, sem entender o conteúdo; decodificar de verdade
-  (block-states, entidades) é o que falta pra ir além de "mudou ou não".
-- [ ] Estatísticas de mundo por snapshot (blocos, entidades, estruturas)
+- [x] Parser NBT completo (block-states) — implementado (Sessão 9, 2026-09-02): decodifica o
+  `block_states` bit-packed (palette + índices) de cada seção de um chunk, incluindo o caso
+  especial de palette de 1 tipo só (sem `data`), e diz exatamente qual bloco (posição absoluta +
+  `Name`+`Properties` de/para) mudou entre duas branches — não só "esse chunk mudou". Entidades
+  ainda não cobertas (só block-states). Novo módulo `mcgit-world::chunk`, comando Tauri
+  `diff_world_chunk_blocks`, botão "Show blocks" na UI (dentro do "Show chunks" já existente).
+  Verificado ao vivo pela GUI real, num mundo real com um bloco editado numa branch. Detalhes
+  completos em `ARCHITECTURE.md` §Fase 4.
+- [~] Estatísticas de mundo por snapshot (blocos, entidades, estruturas) — blocos implementados
+  (Sessão 9, 2026-09-02): conta cada tipo de bloco (por `Name`, ignorando `Properties` — decisão
+  deliberada, diferente do diff, porque "quantos `stone`" não deveria separar variante nenhuma)
+  em todo o `region/` de um snapshot, somando entre todos os arquivos de região, ordenado do mais
+  comum pro menos comum. Reaproveita o mesmo decoder do item anterior, mas contando em vez de
+  comparando — sem materializar os 4096 blocos por seção, só os índices decodificados são
+  somados por posição de palette. Entidades e estruturas ainda não cobertas (só a pasta `region/`
+  principal). Novo comando Tauri `world_block_stats`, botão "Show stats" por snapshot na tela de
+  histórico (`WorldHistory`, disponível também no Modo Básico, não só Avançado). Verificado ao
+  vivo pela GUI real contra um mundo real (`medieval`). Detalhes completos em `ARCHITECTURE.md`
+  §Fase 4.
 - [ ] Visualização de alterações entre snapshots (na GUI) — já existe uma versão mínima (lista
   textual de chunks alterados na tela de comparação de branches); uma visualização de verdade
   (mapa, destaque visual) ainda não foi feita.

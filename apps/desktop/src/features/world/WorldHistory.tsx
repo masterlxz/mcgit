@@ -1,18 +1,32 @@
 import { useState } from "react";
 import { useAdvancedMode } from "../../context/AdvancedModeContext";
-import type { Snapshot } from "../../api/world";
+import type { BlockCount, Snapshot } from "../../api/world";
+
+const MAX_BLOCK_STATS_SHOWN = 20;
 
 type Props = {
   snapshots: Snapshot[];
+  blockStats: { hash: string; stats: BlockCount[] } | undefined;
   onRestore: (hash: string) => void;
   onDelete: (hash: string) => void;
+  onShowStats: (hash: string) => void;
 };
 
 type Confirming = { hash: string; action: "restore" | "delete" } | null;
 
-export function WorldHistory({ snapshots, onRestore, onDelete }: Props) {
+export function WorldHistory({ snapshots, blockStats, onRestore, onDelete, onShowStats }: Props) {
   const [confirming, setConfirming] = useState<Confirming>(null);
+  const [openStatsFor, setOpenStatsFor] = useState<string | null>(null);
   const { advancedMode } = useAdvancedMode();
+
+  function toggleStats(hash: string) {
+    if (openStatsFor === hash) {
+      setOpenStatsFor(null);
+    } else {
+      setOpenStatsFor(hash);
+      onShowStats(hash);
+    }
+  }
 
   if (snapshots.length === 0) {
     return <p>No snapshots yet.</p>;
@@ -76,6 +90,32 @@ export function WorldHistory({ snapshots, onRestore, onDelete }: Props) {
                 <button onClick={() => setConfirming({ hash: snapshot.hash, action: "delete" })}>
                   Delete
                 </button>
+                <button onClick={() => toggleStats(snapshot.hash)}>
+                  {openStatsFor === snapshot.hash ? "Hide stats" : "Show stats"}
+                </button>
+                {openStatsFor === snapshot.hash && (
+                  <ul>
+                    {blockStats && blockStats.hash === snapshot.hash && blockStats.stats.length === 0 && (
+                      <li>
+                        <em>No blocks found (empty world, or no region files yet).</em>
+                      </li>
+                    )}
+                    {blockStats &&
+                      blockStats.hash === snapshot.hash &&
+                      blockStats.stats.slice(0, MAX_BLOCK_STATS_SHOWN).map((block) => (
+                        <li key={block.name}>
+                          {block.count.toLocaleString()} × {block.name}
+                        </li>
+                      ))}
+                    {blockStats &&
+                      blockStats.hash === snapshot.hash &&
+                      blockStats.stats.length > MAX_BLOCK_STATS_SHOWN && (
+                        <li>
+                          <em>...and {blockStats.stats.length - MAX_BLOCK_STATS_SHOWN} more block types.</em>
+                        </li>
+                      )}
+                  </ul>
+                )}
               </>
             )}
           </li>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAdvancedMode } from "../../context/AdvancedModeContext";
-import type { Branch, ChunkDiff, FileChange, Snapshot, World } from "../../api/world";
+import type { BlockCount, BlockDiff, Branch, ChunkDiff, FileChange, Snapshot, World } from "../../api/world";
 import { SaveSnapshotForm } from "./SaveSnapshotForm";
 import { WorldHistory } from "./WorldHistory";
 import { WorldBranches, type MergeState } from "./WorldBranches";
@@ -8,11 +8,17 @@ import { WorldBranches, type MergeState } from "./WorldBranches";
 type Props = {
   worlds: World[];
   historyByWorld: Record<string, Snapshot[] | undefined>;
+  blockStatsByWorld: Record<string, { hash: string; stats: BlockCount[] } | undefined>;
   branchesByWorld: Record<string, Branch[] | undefined>;
   diffsByWorld: Record<string, { otherBranch: string; changes: FileChange[] } | undefined>;
   regionChunkDiffByWorld: Record<
     string,
     { otherBranch: string; path: string; chunks: ChunkDiff[] } | undefined
+  >;
+  chunkBlockDiffByWorld: Record<
+    string,
+    | { otherBranch: string; path: string; chunkX: number; chunkZ: number; blocks: BlockDiff[] }
+    | undefined
   >;
   mergeStateByWorld: Record<string, MergeState | undefined>;
   onToggleVersioning: (folderName: string, enable: boolean) => void;
@@ -20,11 +26,19 @@ type Props = {
   onShowHistory: (folderName: string) => void;
   onRestore: (folderName: string, hash: string) => void;
   onDelete: (folderName: string, hash: string) => void;
+  onShowStats: (folderName: string, hash: string) => void;
   onShowBranches: (folderName: string) => void;
   onCreateBranch: (folderName: string, name: string) => void;
   onSwitchBranch: (folderName: string, name: string) => void;
   onCompareBranch: (folderName: string, otherBranch: string) => void;
   onShowRegionChunks: (folderName: string, otherBranch: string, path: string) => void;
+  onShowChunkBlocks: (
+    folderName: string,
+    otherBranch: string,
+    path: string,
+    chunkX: number,
+    chunkZ: number,
+  ) => void;
   onPreviewMerge: (folderName: string, otherBranch: string) => void;
   onCancelMergePreview: (folderName: string) => void;
   onMerge: (folderName: string, otherBranch: string) => void;
@@ -36,20 +50,24 @@ type Props = {
 export function WorldList({
   worlds,
   historyByWorld,
+  blockStatsByWorld,
   branchesByWorld,
   diffsByWorld,
   regionChunkDiffByWorld,
+  chunkBlockDiffByWorld,
   mergeStateByWorld,
   onToggleVersioning,
   onSaveSnapshot,
   onShowHistory,
   onRestore,
   onDelete,
+  onShowStats,
   onShowBranches,
   onCreateBranch,
   onSwitchBranch,
   onCompareBranch,
   onShowRegionChunks,
+  onShowChunkBlocks,
   onPreviewMerge,
   onCancelMergePreview,
   onMerge,
@@ -108,8 +126,10 @@ export function WorldList({
               {openHistoryFor.has(world.folder_name) && (
                 <WorldHistory
                   snapshots={historyByWorld[world.folder_name] ?? []}
+                  blockStats={blockStatsByWorld[world.folder_name]}
                   onRestore={(hash) => onRestore(world.folder_name, hash)}
                   onDelete={(hash) => onDelete(world.folder_name, hash)}
+                  onShowStats={(hash) => onShowStats(world.folder_name, hash)}
                 />
               )}
               {advancedMode && (
@@ -122,12 +142,16 @@ export function WorldList({
                       branches={branchesByWorld[world.folder_name] ?? []}
                       diff={diffsByWorld[world.folder_name]}
                       regionChunkDiff={regionChunkDiffByWorld[world.folder_name]}
+                      chunkBlockDiff={chunkBlockDiffByWorld[world.folder_name]}
                       mergeState={mergeStateByWorld[world.folder_name]}
                       onCreate={(name) => onCreateBranch(world.folder_name, name)}
                       onSwitch={(name) => onSwitchBranch(world.folder_name, name)}
                       onCompare={(name) => onCompareBranch(world.folder_name, name)}
                       onShowRegionChunks={(otherBranch, path) =>
                         onShowRegionChunks(world.folder_name, otherBranch, path)
+                      }
+                      onShowChunkBlocks={(otherBranch, path, chunkX, chunkZ) =>
+                        onShowChunkBlocks(world.folder_name, otherBranch, path, chunkX, chunkZ)
                       }
                       onPreviewMerge={(name) => onPreviewMerge(world.folder_name, name)}
                       onCancelMergePreview={() => onCancelMergePreview(world.folder_name)}

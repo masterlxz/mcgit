@@ -31,7 +31,7 @@ Fase 0  — Pesquisa & Arquitetura                    [x] Encerrada (3 itens adi
 Fase 1  — MVP do Launcher                           [~] Em andamento (Java Manager, Instância+Vanilla, Git Engine básico completo, GUI inicial, Modo Básico/Avançado — ver PHASE.md)
 Fase 2  — Qualidade do Versionamento                [ ] Priorizada (ver nota de reordenação abaixo)
 Fase 3  — Modloaders, Mods & Modpacks               [ ] Não iniciada (adiada — ver nota abaixo)
-Fase 4  — Minecraft-Aware World Diffing             [~] Em andamento (diff por chunk implementado — ver PHASE.md)
+Fase 4  — Minecraft-Aware World Diffing             [~] Em andamento (diff por chunk, parser NBT completo, estatísticas de blocos — ver PHASE.md)
 Fase 5  — Skins, Backup Inteligente & Sincronização [ ] Não iniciada (adiada — ver nota abaixo)
 Fase 6  — Branching de Mundos                       [x] Completa (criar/trocar branch, comparação e merge — ver PHASE.md)
 Fase 7  — Arweave + TruthID                         [ ] Não iniciada (adiada — ver nota abaixo)

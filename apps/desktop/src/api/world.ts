@@ -150,3 +150,42 @@ export function diffWorldRegionChunks(
 ): Promise<ChunkDiff[]> {
   return invoke("diff_world_region_chunks", { instanceId, folderName, otherBranch, path });
 }
+
+export type BlockDiff = {
+  x: number;
+  y: number;
+  z: number;
+  from: string;
+  to: string;
+};
+
+export type BlockCount = {
+  name: string;
+  count: number;
+};
+
+export function worldBlockStats(
+  instanceId: number,
+  folderName: string,
+  commitHash: string,
+): Promise<BlockCount[]> {
+  return invoke("world_block_stats", { instanceId, folderName, commitHash });
+}
+
+export function diffWorldChunkBlocks(
+  instanceId: number,
+  folderName: string,
+  otherBranch: string,
+  path: string,
+  chunkX: number,
+  chunkZ: number,
+): Promise<BlockDiff[]> {
+  return invoke("diff_world_chunk_blocks", {
+    instanceId,
+    folderName,
+    otherBranch,
+    path,
+    chunkX,
+    chunkZ,
+  });
+}

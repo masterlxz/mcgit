@@ -1,5 +1,7 @@
 import { useState } from "react";
-import type { Branch, ChunkDiff, ConflictedFile, FileChange } from "../../api/world";
+import type { BlockDiff, Branch, ChunkDiff, ConflictedFile, FileChange } from "../../api/world";
+
+const MAX_BLOCK_DIFFS_SHOWN = 50;
 
 export type MergeState =
   | { phase: "preview"; otherBranch: string; conflictingFiles: string[] }
@@ -9,11 +11,15 @@ type Props = {
   branches: Branch[];
   diff: { otherBranch: string; changes: FileChange[] } | undefined;
   regionChunkDiff: { otherBranch: string; path: string; chunks: ChunkDiff[] } | undefined;
+  chunkBlockDiff:
+    | { otherBranch: string; path: string; chunkX: number; chunkZ: number; blocks: BlockDiff[] }
+    | undefined;
   mergeState: MergeState | undefined;
   onCreate: (name: string) => void;
   onSwitch: (name: string) => void;
   onCompare: (name: string) => void;
   onShowRegionChunks: (otherBranch: string, path: string) => void;
+  onShowChunkBlocks: (otherBranch: string, path: string, chunkX: number, chunkZ: number) => void;
   onPreviewMerge: (name: string) => void;
   onCancelMergePreview: () => void;
   onMerge: (name: string) => void;
@@ -28,6 +34,10 @@ function isRegionFile(path: string): boolean {
 
 function describeChunkDiff(chunk: ChunkDiff): string {
   return `(${chunk.chunk_x}, ${chunk.chunk_z}) ${chunk.status}`;
+}
+
+function describeBlockDiff(block: BlockDiff): string {
+  return `(${block.x}, ${block.y}, ${block.z}): ${block.from} → ${block.to}`;
 }
 
 function formatSize(bytes: number | null): string {
@@ -62,11 +72,13 @@ export function WorldBranches({
   branches,
   diff,
   regionChunkDiff,
+  chunkBlockDiff,
   mergeState,
   onCreate,
   onSwitch,
   onCompare,
   onShowRegionChunks,
+  onShowChunkBlocks,
   onPreviewMerge,
   onCancelMergePreview,
   onMerge,
@@ -78,6 +90,7 @@ export function WorldBranches({
   const [confirmingSwitchFor, setConfirmingSwitchFor] = useState<string | null>(null);
   const [openDiffFor, setOpenDiffFor] = useState<string | null>(null);
   const [openChunksFor, setOpenChunksFor] = useState<string | null>(null);
+  const [openBlocksFor, setOpenBlocksFor] = useState<string | null>(null);
 
   function toggleDiff(name: string) {
     if (openDiffFor === name) {
@@ -94,6 +107,16 @@ export function WorldBranches({
     } else {
       setOpenChunksFor(path);
       onShowRegionChunks(otherBranch, path);
+    }
+  }
+
+  function toggleBlocks(otherBranch: string, path: string, chunkX: number, chunkZ: number) {
+    const key = `${chunkX},${chunkZ}`;
+    if (openBlocksFor === key) {
+      setOpenBlocksFor(null);
+    } else {
+      setOpenBlocksFor(key);
+      onShowChunkBlocks(otherBranch, path, chunkX, chunkZ);
     }
   }
 
@@ -178,11 +201,74 @@ export function WorldBranches({
                               {regionChunkDiff &&
                                 regionChunkDiff.otherBranch === branch.name &&
                                 regionChunkDiff.path === change.path &&
-                                regionChunkDiff.chunks.map((chunk) => (
-                                  <li key={`${chunk.chunk_x},${chunk.chunk_z}`}>
-                                    {describeChunkDiff(chunk)}
-                                  </li>
-                                ))}
+                                regionChunkDiff.chunks.map((chunk) => {
+                                  const blockKey = `${chunk.chunk_x},${chunk.chunk_z}`;
+                                  return (
+                                    <li key={blockKey}>
+                                      {describeChunkDiff(chunk)}
+                                      {chunk.status === "changed" && (
+                                        <>
+                                          {" "}
+                                          <button
+                                            onClick={() =>
+                                              toggleBlocks(
+                                                branch.name,
+                                                change.path,
+                                                chunk.chunk_x,
+                                                chunk.chunk_z,
+                                              )
+                                            }
+                                          >
+                                            {openBlocksFor === blockKey ? "Hide blocks" : "Show blocks"}
+                                          </button>
+                                          {openBlocksFor === blockKey && (
+                                            <ul>
+                                              {chunkBlockDiff &&
+                                                chunkBlockDiff.otherBranch === branch.name &&
+                                                chunkBlockDiff.path === change.path &&
+                                                chunkBlockDiff.chunkX === chunk.chunk_x &&
+                                                chunkBlockDiff.chunkZ === chunk.chunk_z &&
+                                                chunkBlockDiff.blocks.length === 0 && (
+                                                  <li>
+                                                    <em>
+                                                      No blocks differ in shared sections (the
+                                                      change is in a section only one side has).
+                                                    </em>
+                                                  </li>
+                                                )}
+                                              {chunkBlockDiff &&
+                                                chunkBlockDiff.otherBranch === branch.name &&
+                                                chunkBlockDiff.path === change.path &&
+                                                chunkBlockDiff.chunkX === chunk.chunk_x &&
+                                                chunkBlockDiff.chunkZ === chunk.chunk_z &&
+                                                chunkBlockDiff.blocks
+                                                  .slice(0, MAX_BLOCK_DIFFS_SHOWN)
+                                                  .map((block) => (
+                                                    <li key={`${block.x},${block.y},${block.z}`}>
+                                                      {describeBlockDiff(block)}
+                                                    </li>
+                                                  ))}
+                                              {chunkBlockDiff &&
+                                                chunkBlockDiff.otherBranch === branch.name &&
+                                                chunkBlockDiff.path === change.path &&
+                                                chunkBlockDiff.chunkX === chunk.chunk_x &&
+                                                chunkBlockDiff.chunkZ === chunk.chunk_z &&
+                                                chunkBlockDiff.blocks.length > MAX_BLOCK_DIFFS_SHOWN && (
+                                                  <li>
+                                                    <em>
+                                                      ...and{" "}
+                                                      {chunkBlockDiff.blocks.length - MAX_BLOCK_DIFFS_SHOWN}{" "}
+                                                      more.
+                                                    </em>
+                                                  </li>
+                                                )}
+                                            </ul>
+                                          )}
+                                        </>
+                                      )}
+                                    </li>
+                                  );
+                                })}
                             </ul>
                           )}
                         </>

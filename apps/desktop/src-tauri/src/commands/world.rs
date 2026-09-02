@@ -584,3 +584,90 @@ pub async fn diff_world_region_chunks(
 
     Ok(diffs.into_iter().map(ChunkDiffDto::from).collect())
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BlockDiffDto {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub from: String,
+    pub to: String,
+}
+
+impl From<mcgit_world::BlockDiff> for BlockDiffDto {
+    fn from(diff: mcgit_world::BlockDiff) -> Self {
+        BlockDiffDto {
+            x: diff.x,
+            y: diff.y,
+            z: diff.z,
+            from: diff.from,
+            to: diff.to,
+        }
+    }
+}
+
+/// Diffs one chunk's blocks (by absolute world position) between the
+/// world's current branch and `other_branch` — decodes each side's
+/// `block_states` (palette + bit-packed indices) and reports exactly which
+/// positions differ, and to/from what block. `chunk_x`/`chunk_z` are the
+/// chunk's absolute coordinates, as reported by `diff_world_region_chunks`.
+#[tauri::command]
+pub async fn diff_world_chunk_blocks(
+    instance_id: i64,
+    folder_name: String,
+    other_branch: String,
+    path: String,
+    chunk_x: i32,
+    chunk_z: i32,
+    state: State<'_, AppState>,
+) -> Result<Vec<BlockDiffDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    let diffs = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        let current = mcgit_core::git::current_branch(&world_dir)?;
+        mcgit_core::git::diff_chunk_blocks(&world_dir, &current, &other_branch, &path, chunk_x, chunk_z)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(diffs.into_iter().map(BlockDiffDto::from).collect())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BlockCountDto {
+    pub name: String,
+    pub count: u64,
+}
+
+/// Tallies every block (by bare name, ignoring block-state properties)
+/// across the world's `region/` folder as it existed at `commit_hash` — a
+/// single snapshot's totals, not a diff between two. Sorted most common
+/// block first.
+#[tauri::command]
+pub async fn world_block_stats(
+    instance_id: i64,
+    folder_name: String,
+    commit_hash: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<BlockCountDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    let stats = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::world_block_stats(&world_dir, &commit_hash)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(stats
+        .into_iter()
+        .map(|(name, count)| BlockCountDto { name, count })
+        .collect())
+}

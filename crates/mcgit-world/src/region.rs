@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::io::Cursor;
 
 use fastanvil::Region;
 
+use crate::chunk::count_chunk_blocks;
 use crate::types::{ChunkDiff, ChunkStatus, WorldError};
 
 /// Extracts `(region_x, region_z)` from a region file's name, e.g.
@@ -51,6 +53,26 @@ pub fn diff_region_chunks(
     }
 
     Ok(diffs)
+}
+
+/// Tallies every block (by bare name) across every generated chunk in one
+/// region file — a single snapshot's totals, not a diff between two. Cheap
+/// per section (see `count_chunk_blocks`), but still O(1024 chunks) per
+/// region file, since every generated chunk's NBT gets parsed once.
+pub fn count_region_blocks(region_bytes: &[u8]) -> Result<HashMap<String, u64>, WorldError> {
+    let mut region = Region::from_stream(Cursor::new(region_bytes))?;
+
+    let mut counts = HashMap::new();
+    for local_z in 0..32 {
+        for local_x in 0..32 {
+            let Some(chunk_bytes) = region.read_chunk(local_x, local_z)? else {
+                continue;
+            };
+            count_chunk_blocks(&chunk_bytes, &mut counts)?;
+        }
+    }
+
+    Ok(counts)
 }
 
 #[cfg(test)]
@@ -138,5 +160,51 @@ mod tests {
         let diffs = diff_region_chunks(&bytes, &bytes, 0, 0).unwrap();
 
         assert!(diffs.is_empty());
+    }
+
+    /// A chunk with one section whose entire 4096 blocks are `name` — the
+    /// single-entry-palette shape, the simplest one `count_chunk_blocks`
+    /// handles, enough to exercise `count_region_blocks` across chunks.
+    fn chunk_with_single_block(name: &str) -> Vec<u8> {
+        let mut entry = HashMap::new();
+        entry.insert("Name".to_string(), fastnbt::Value::String(name.to_string()));
+
+        let mut block_states = HashMap::new();
+        block_states.insert(
+            "palette".to_string(),
+            fastnbt::Value::List(vec![fastnbt::Value::Compound(entry)]),
+        );
+
+        let mut section = HashMap::new();
+        section.insert("Y".to_string(), fastnbt::Value::Byte(0));
+        section.insert("block_states".to_string(), fastnbt::Value::Compound(block_states));
+
+        let mut chunk = HashMap::new();
+        chunk.insert("sections".to_string(), fastnbt::Value::List(vec![fastnbt::Value::Compound(section)]));
+        fastnbt::to_bytes(&fastnbt::Value::Compound(chunk)).unwrap()
+    }
+
+    #[test]
+    fn count_region_blocks_sums_across_multiple_chunks() {
+        let mut region = Region::create(Cursor::new(Vec::new())).unwrap();
+        region.write_chunk(0, 0, &chunk_with_single_block("minecraft:stone")).unwrap();
+        region.write_chunk(1, 0, &chunk_with_single_block("minecraft:stone")).unwrap();
+        region.write_chunk(2, 0, &chunk_with_single_block("minecraft:dirt")).unwrap();
+        let bytes = region.into_inner().unwrap().into_inner();
+
+        let counts = count_region_blocks(&bytes).unwrap();
+
+        const BLOCKS_PER_SECTION: u64 = 16 * 16 * 16;
+        assert_eq!(counts["minecraft:stone"], BLOCKS_PER_SECTION * 2);
+        assert_eq!(counts["minecraft:dirt"], BLOCKS_PER_SECTION);
+    }
+
+    #[test]
+    fn count_region_blocks_on_empty_region_returns_empty() {
+        let bytes = build_region(&[]);
+
+        let counts = count_region_blocks(&bytes).unwrap();
+
+        assert!(counts.is_empty());
     }
 }
