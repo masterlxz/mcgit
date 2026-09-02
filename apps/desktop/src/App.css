@@ -154,8 +154,15 @@ button {
   font-size: 1em;
 }
 
-input,
+/* `appearance: none` so dark-mode colors actually stick — without it,
+   WebKit renders a disabled <select> with its native (light) OS chrome
+   regardless of any background-color set here, which is exactly the
+   jarring white box found in live verification. Checkboxes/radios are
+   left alone (reset below via `accent-color` instead, which recolors the
+   native widget without needing a hand-built replacement). */
+input:not([type="checkbox"]):not([type="radio"]),
 select {
+  appearance: none;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   padding: 0.5em 0.7em;
@@ -164,11 +171,33 @@ select {
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+select {
+  padding-right: 2em;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4' fill='none' stroke='%23888888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.65em center;
+  background-size: 0.7em;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--color-primary);
+  width: 1rem;
+  height: 1rem;
+}
+
 input:focus,
 select:focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+input:disabled,
+select:disabled {
+  background-color: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+  border-color: var(--color-disabled-bg);
+  cursor: not-allowed;
 }
 
 input::placeholder {
@@ -210,6 +239,7 @@ button.btn-primary {
   background-color: var(--color-primary);
   border-color: var(--color-primary);
   color: var(--color-primary-contrast);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 button.btn-primary:hover:not(:disabled) {
@@ -341,6 +371,13 @@ button.btn-danger:hover:not(:disabled) {
   background-color: var(--color-surface);
   padding: var(--space-4);
   text-align: left;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.card:hover {
+  border-color: var(--color-text-muted);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .card > a {
@@ -384,6 +421,7 @@ button.btn-danger:hover:not(:disabled) {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background-color: var(--color-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   padding: var(--space-3) var(--space-4);
   margin-bottom: var(--space-2);
 }
@@ -467,6 +505,7 @@ button.btn-danger:hover:not(:disabled) {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background-color: var(--color-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   padding: var(--space-4);
   margin-bottom: var(--space-3);
 }

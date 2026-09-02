@@ -1451,6 +1451,39 @@ devem chamar atenção de propósito (ação principal, perigo, logo), com o res
 deliberadamente neutro. Vale re-auditar contra esse princípio antes de aplicar a cor de marca em
 qualquer tela/elemento novo.
 
+### Segunda correção: bug real de `<select>` desabilitado + polimento geral (mesma sessão, 2026-09-02)
+
+Usuário reagiu à correção anterior com "tá bizarramente feio, poderia dar uma caprichada geral?"
+— forte o suficiente pra investigar de novo em vez de só ajustar tom. Achado real, não só gosto:
+um `<select>` desabilitado (o "Pick a Minecraft version" antes da lista carregar, ou antes de
+uma versão de Java estar disponível) renderizava com o **chrome nativo claro do WebKit**, ignorando
+por completo o `background-color`/`color` definidos em CSS — porque nenhuma regra em `App.css`
+tinha `appearance: none`. O resultado era uma caixa branca sólida cortando o meio de uma
+interface inteiramente preta, o tipo de bug visual que por si só faz um app inteiro parecer
+quebrado, não só "poderia ser mais bonito".
+
+**Correção real**: `input`/`select` (exceto checkbox/radio, que usam `accent-color` em vez de
+reset de aparência — mais simples que reconstruir a caixinha do zero) ganham
+`appearance: none`, removendo o chrome nativo do navegador de vez — background/borda/cor
+definidos em CSS agora se aplicam em qualquer estado, inclusive desabilitado (que também ganhou
+uma regra própria, `input:disabled`/`select:disabled`, inexistente até aqui). Como
+`appearance: none` também remove a setinha nativa do `<select>`, uma seta customizada foi
+adicionada via `background-image` (SVG inline, cor neutra fixa que funciona em claro e escuro
+sem precisar de duas versões). Checkbox (o toggle "Advanced mode") ganhou `accent-color:
+var(--color-primary)` — troca o azul/verde nativo do tema do SO por vermelho de marca, um
+"detalhe marcante" genuíno e pequeno, exatamente o tipo de uso que a correção anterior definiu
+como correto.
+
+**Polimento geral** (o pedido em si, além do bug): `.card`/`.world-item`/`.install-list li`
+ganham `box-shadow` sutil (mais forte no hover dos cards) — a versão anterior era só contorno
+fino de 1px sobre fundo preto, lisa demais, sem nenhuma sensação de profundidade/camada;
+`.btn-primary` ganha uma sombra pequena também, pra não ficar um bloco de cor totalmente chapado.
+
+Verificado ao vivo pela GUI real, na mesma sessão em que o usuário pediu — a caixa branca
+sumiu, o dropdown ficou escuro com seta customizada e texto legível, o checkbox "Advanced mode"
+ficou vermelho em vez do teal/verde nativo do KDE Breeze. `npx tsc --noEmit` limpo (mudança só
+em CSS).
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

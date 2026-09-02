@@ -1384,3 +1384,32 @@ Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System (sub
 **Estado ao final da sessão**: identidade visual corrigida e alinhada com o que o usuário
 queria. Próxima frente em aberto: Fase 2 (auto-snapshot/auto-gc) ou reabrir Game Runner/login
 Microsoft, a critério do usuário.
+
+---
+
+## Sessão 10 (quinta continuação) — 2026-09-02 — Bug real de `<select>` + polimento geral
+
+Usuário reagiu à correção anterior com força — "tá bizarramente feio, poderia dar uma caprichada
+geral?" — o suficiente pra investigar de novo em vez de só reajustar tom de cor. Achado real:
+um `<select>` desabilitado renderizava com o chrome nativo claro do WebKit (nenhuma regra tinha
+`appearance: none`), aparecendo como uma caixa branca sólida no meio de uma interface preta —
+bug visual isolado que por si só derruba a impressão do app inteiro, não uma questão de gosto.
+
+Corrigido: `input`/`select` ganham `appearance: none` (exceto checkbox/radio, que usam
+`accent-color` em vez de reconstruir do zero) + uma regra `:disabled` própria (não existia até
+aqui) + uma seta customizada via SVG inline pro `<select>` (a nativa some junto com o
+`appearance`). Checkbox do "Advanced mode" ganha `accent-color: var(--color-primary)` — troca o
+teal/verde nativo do KDE por vermelho de marca, um acento pequeno e genuíno. Além do bug,
+polimento geral pedido: `.card`/`.world-item`/`.install-list li`/`.btn-primary` ganham
+`box-shadow` sutil — a versão anterior era só contorno fino sobre preto, sem nenhuma
+profundidade.
+
+Verificado ao vivo na mesma sessão: caixa branca sumiu, dropdown escuro com seta e texto
+legíveis, checkbox vermelho em vez de teal. `npx tsc --noEmit` limpo (só CSS).
+
+Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System (subseção "Segunda
+correção: bug real de `<select>` desabilitado + polimento geral").
+
+**Estado ao final da sessão**: identidade visual corrigida e polida, sem bugs visuais
+conhecidos. Próxima frente em aberto: Fase 2 (auto-snapshot/auto-gc) ou reabrir Game
+Runner/login Microsoft, a critério do usuário.
