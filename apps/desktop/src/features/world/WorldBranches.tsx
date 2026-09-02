@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { BlockDiff, Branch, ChunkDiff, ConflictedFile, FileChange } from "../../api/world";
+import { RegionChunkMap } from "./RegionChunkMap";
 
 const MAX_BLOCK_DIFFS_SHOWN = 50;
 
@@ -32,8 +33,15 @@ function isRegionFile(path: string): boolean {
   return path.startsWith("region/") && path.endsWith(".mca");
 }
 
-function describeChunkDiff(chunk: ChunkDiff): string {
-  return `(${chunk.chunk_x}, ${chunk.chunk_z}) ${chunk.status}`;
+/// Pulls `(region_x, region_z)` out of a region file's path (e.g.
+/// `"region/r.-1.0.mca"` -> `[-1, 0]`), the same `r.<x>.<z>.mca` naming
+/// Minecraft itself uses (mirrors `mcgit_world::parse_region_coords` on the
+/// Rust side) — needed to place each chunk in its 32×32 map cell.
+function parseRegionCoords(path: string): [number, number] | null {
+  const filename = path.split("/").pop() ?? path;
+  const match = filename.match(/^r\.(-?\d+)\.(-?\d+)\.mca$/);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2])];
 }
 
 function describeBlockDiff(block: BlockDiff): string {
@@ -179,102 +187,92 @@ export function WorldBranches({
                 )}
                 {diff &&
                   diff.otherBranch === branch.name &&
-                  diff.changes.map((change) => (
-                    <li key={change.path}>
-                      {change.status} — {change.path} — {describeChange(change)}
-                      {change.status === "modified" && isRegionFile(change.path) && (
-                        <>
-                          {" "}
-                          <button onClick={() => toggleChunks(branch.name, change.path)}>
-                            {openChunksFor === change.path ? "Hide chunks" : "Show chunks"}
-                          </button>
-                          {openChunksFor === change.path && (
-                            <ul>
-                              {regionChunkDiff &&
-                                regionChunkDiff.otherBranch === branch.name &&
-                                regionChunkDiff.path === change.path &&
-                                regionChunkDiff.chunks.length === 0 && (
-                                  <li>
+                  diff.changes.map((change) => {
+                    const regionCoords = isRegionFile(change.path) ? parseRegionCoords(change.path) : null;
+                    const thisRegionChunkDiff =
+                      regionChunkDiff &&
+                      regionChunkDiff.otherBranch === branch.name &&
+                      regionChunkDiff.path === change.path
+                        ? regionChunkDiff
+                        : undefined;
+                    const openChunkX = openBlocksFor ? Number(openBlocksFor.split(",")[0]) : null;
+                    const openChunkZ = openBlocksFor ? Number(openBlocksFor.split(",")[1]) : null;
+                    const thisChunkBlockDiff =
+                      chunkBlockDiff &&
+                      chunkBlockDiff.otherBranch === branch.name &&
+                      chunkBlockDiff.path === change.path &&
+                      chunkBlockDiff.chunkX === openChunkX &&
+                      chunkBlockDiff.chunkZ === openChunkZ
+                        ? chunkBlockDiff
+                        : undefined;
+
+                    return (
+                      <li key={change.path}>
+                        {change.status} — {change.path} — {describeChange(change)}
+                        {change.status === "modified" && regionCoords && (
+                          <>
+                            {" "}
+                            <button onClick={() => toggleChunks(branch.name, change.path)}>
+                              {openChunksFor === change.path ? "Hide chunks" : "Show chunks"}
+                            </button>
+                            {openChunksFor === change.path && thisRegionChunkDiff && (
+                              <>
+                                {thisRegionChunkDiff.chunks.length === 0 ? (
+                                  <p>
                                     <em>No chunks differ (only metadata changed).</em>
-                                  </li>
+                                  </p>
+                                ) : (
+                                  <RegionChunkMap
+                                    chunks={thisRegionChunkDiff.chunks}
+                                    regionX={regionCoords[0]}
+                                    regionZ={regionCoords[1]}
+                                    openChunkKey={openBlocksFor}
+                                    onToggleChunk={(chunkX, chunkZ) =>
+                                      toggleBlocks(branch.name, change.path, chunkX, chunkZ)
+                                    }
+                                  />
                                 )}
-                              {regionChunkDiff &&
-                                regionChunkDiff.otherBranch === branch.name &&
-                                regionChunkDiff.path === change.path &&
-                                regionChunkDiff.chunks.map((chunk) => {
-                                  const blockKey = `${chunk.chunk_x},${chunk.chunk_z}`;
-                                  return (
-                                    <li key={blockKey}>
-                                      {describeChunkDiff(chunk)}
-                                      {chunk.status === "changed" && (
-                                        <>
-                                          {" "}
-                                          <button
-                                            onClick={() =>
-                                              toggleBlocks(
-                                                branch.name,
-                                                change.path,
-                                                chunk.chunk_x,
-                                                chunk.chunk_z,
-                                              )
-                                            }
-                                          >
-                                            {openBlocksFor === blockKey ? "Hide blocks" : "Show blocks"}
-                                          </button>
-                                          {openBlocksFor === blockKey && (
-                                            <ul>
-                                              {chunkBlockDiff &&
-                                                chunkBlockDiff.otherBranch === branch.name &&
-                                                chunkBlockDiff.path === change.path &&
-                                                chunkBlockDiff.chunkX === chunk.chunk_x &&
-                                                chunkBlockDiff.chunkZ === chunk.chunk_z &&
-                                                chunkBlockDiff.blocks.length === 0 && (
-                                                  <li>
-                                                    <em>
-                                                      No blocks differ in shared sections (the
-                                                      change is in a section only one side has).
-                                                    </em>
-                                                  </li>
-                                                )}
-                                              {chunkBlockDiff &&
-                                                chunkBlockDiff.otherBranch === branch.name &&
-                                                chunkBlockDiff.path === change.path &&
-                                                chunkBlockDiff.chunkX === chunk.chunk_x &&
-                                                chunkBlockDiff.chunkZ === chunk.chunk_z &&
-                                                chunkBlockDiff.blocks
-                                                  .slice(0, MAX_BLOCK_DIFFS_SHOWN)
-                                                  .map((block) => (
-                                                    <li key={`${block.x},${block.y},${block.z}`}>
-                                                      {describeBlockDiff(block)}
-                                                    </li>
-                                                  ))}
-                                              {chunkBlockDiff &&
-                                                chunkBlockDiff.otherBranch === branch.name &&
-                                                chunkBlockDiff.path === change.path &&
-                                                chunkBlockDiff.chunkX === chunk.chunk_x &&
-                                                chunkBlockDiff.chunkZ === chunk.chunk_z &&
-                                                chunkBlockDiff.blocks.length > MAX_BLOCK_DIFFS_SHOWN && (
-                                                  <li>
-                                                    <em>
-                                                      ...and{" "}
-                                                      {chunkBlockDiff.blocks.length - MAX_BLOCK_DIFFS_SHOWN}{" "}
-                                                      more.
-                                                    </em>
-                                                  </li>
-                                                )}
-                                            </ul>
-                                          )}
-                                        </>
+                                {openBlocksFor && openChunkX !== null && openChunkZ !== null && (
+                                  <div>
+                                    <p>
+                                      Blocks changed in chunk ({openChunkX}, {openChunkZ}):
+                                    </p>
+                                    <ul>
+                                      {thisChunkBlockDiff && thisChunkBlockDiff.blocks.length === 0 && (
+                                        <li>
+                                          <em>
+                                            No blocks differ in shared sections (the change is in
+                                            a section only one side has).
+                                          </em>
+                                        </li>
                                       )}
-                                    </li>
-                                  );
-                                })}
-                            </ul>
-                          )}
-                        </>
-                      )}
-                    </li>
-                  ))}
+                                      {thisChunkBlockDiff &&
+                                        thisChunkBlockDiff.blocks
+                                          .slice(0, MAX_BLOCK_DIFFS_SHOWN)
+                                          .map((block) => (
+                                            <li key={`${block.x},${block.y},${block.z}`}>
+                                              {describeBlockDiff(block)}
+                                            </li>
+                                          ))}
+                                      {thisChunkBlockDiff &&
+                                        thisChunkBlockDiff.blocks.length > MAX_BLOCK_DIFFS_SHOWN && (
+                                          <li>
+                                            <em>
+                                              ...and{" "}
+                                              {thisChunkBlockDiff.blocks.length - MAX_BLOCK_DIFFS_SHOWN} more.
+                                            </em>
+                                          </li>
+                                        )}
+                                    </ul>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </>
+                        )}
+                      </li>
+                    );
+                  })}
               </ul>
             )}
             {mergeState &&

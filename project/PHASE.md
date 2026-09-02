@@ -335,9 +335,19 @@ Antiga "Fase 3 — Minecraft-aware" do mcgit-ferramenta (v1.0).
   erro. Verificado ao vivo pela GUI real contra o mundo `medieval` de novo, agora as três seções
   populadas com dados reais (18 mineshafts, 5 trial chambers, 110 sheep, etc.). Detalhes
   completos em `ARCHITECTURE.md` §Fase 4.
-- [ ] Visualização de alterações entre snapshots (na GUI) — já existe uma versão mínima (lista
-  textual de chunks alterados na tela de comparação de branches); uma visualização de verdade
-  (mapa, destaque visual) ainda não foi feita.
+- [x] Visualização de alterações entre snapshots (na GUI) — implementado (Sessão 9, terceira
+  continuação, 2026-09-02): a lista textual de chunks alterados (`(0, 0) changed`) virou um mapa
+  visual — uma grade 32×32 (um arquivo de região inteiro) colorida por status (verde=added,
+  vermelho=removed, amarelo=changed), com legenda. Clicar num chunk `changed` expande a lista de
+  blocos alterados logo abaixo (mesmo comportamento de antes, só disparado pela célula em vez de
+  um botão ao lado do texto). Escopo confirmado com o usuário via `AskUserQuestion`: só o mapa de
+  chunks por região — visualizar os blocos alterados dentro de um chunk (nível ainda mais fino)
+  continua como lista de texto, fora de escopo desta fatia. Novo componente
+  `RegionChunkMap.tsx`, puro frontend — nenhuma mudança em `mcgit-core`/`mcgit-world` (os dados já
+  existiam desde a fatia "diff por chunk"). Verificado ao vivo pela GUI real: comparação
+  main↔experiment do mundo `medieval` de teste mostrando corretamente um único chunk `(0, 0)`
+  amarelo no canto da grade, clique expandindo `(0, 0, 0): minecraft:deepslate[axis=y] →
+  minecraft:stone`. Fecha o último item em aberto da Fase 4.
 
 ---
 

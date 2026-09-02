@@ -1054,6 +1054,52 @@ stats" no snapshot mais recente do mundo `TestWorld` (o mundo `medieval` real, c
 bloco de verdade — pedra, minérios, madeira etc.) e confirmou que apareceu uma lista de blocos de
 verdade, ordenada do mais comum pro menos comum ("deu boa").
 
+### Mapa visual de chunks — visualização de alterações (Sessão 9, terceira continuação, 2026-09-02)
+
+Fecha o último item em aberto da Fase 4, pedido direto pelo usuário ("segue para o visual") logo
+após a fatia de estatísticas. Escopo confirmado via `AskUserQuestion` antes de codar: só o mapa de
+chunks por arquivo de região (o "mapa, destaque visual" que `PHASE.md` já previa) — visualizar os
+blocos alterados dentro de um chunk continua como lista de texto (já funciona desde o parser NBT
+completo), um salto de complexidade maior (3D, múltiplas camadas Y) fora do pedido desta fatia. E
+o clique num chunk `changed` da grade deveria expandir a lista de blocos abaixo — mesmo
+comportamento de antes, só trocando o gatilho de um botão de texto pra célula da grade.
+
+**Pura mudança de frontend — nenhuma linha de Rust tocada.** Os dados já existiam desde "diff por
+chunk" (primeira fatia da Fase 4): `diff_world_region_chunks` já devolve `{chunk_x, chunk_z,
+status}` pra cada chunk que difere entre duas branches; faltava só desenhar isso como grade em vez
+de lista.
+
+- **`apps/desktop/src/features/world/RegionChunkMap.tsx`** (novo componente): recebe a lista de
+  `ChunkDiff` de um arquivo de região junto com `regionX`/`regionZ` (extraídos do nome do arquivo,
+  ex. `"region/r.-1.0.mca"` → `[-1, 0]`, via uma função `parseRegionCoords` no lado TypeScript que
+  espelha `mcgit_world::parse_region_coords` do lado Rust — mesma regra `r.<x>.<z>.mca`, só que
+  nunca precisou existir em JS até agora porque nada no frontend converia coordenada absoluta pra
+  posição dentro da região). Converte cada `chunk_x`/`chunk_z` absoluto em coordenada local
+  `0..32` (`chunk_x - region_x*32`), monta um mapa de busca por coordenada local, e desenha uma
+  grade CSS de 32×32 células de 11px — a maioria das células fica em branco/cinza-claro (não dá
+  pra distinguir "não mudou" de "nunca foi gerado" só com os dados que `diff_region_chunks`
+  devolve, e não tem necessidade prática de distinguir isso aqui). Cor por status
+  (`added`=verde, `removed`=vermelho, `changed`=amarelo), `title` nativo do navegador pra mostrar
+  coordenada+status no hover (sem precisar de tooltip customizado), clique só ativo em células
+  `changed` (`removed`/`added` não têm diff de blocos comparável — um lado nem tem o chunk).
+- **`apps/desktop/src/features/world/WorldBranches.tsx`**: o `.map((change) => (...))` de
+  arrow-function-com-retorno-implícito virou função com corpo (`{ ... return (...) }`) pra poder
+  computar `regionCoords`/`thisRegionChunkDiff`/`thisChunkBlockDiff` como variáveis antes do JSX —
+  a lista `<ul>` de `(x, z) status` foi substituída por `<RegionChunkMap>`, e o painel de blocos
+  (que antes vivia dentro do `<li>` de cada chunk da lista) virou um bloco único abaixo da grade,
+  mostrado quando `openBlocksFor` aponta pra algum chunk — mesmo estado (`openBlocksFor`, já
+  existente) reaproveitado, só a UI ao redor mudou. `describeChunkDiff` (só formatava o texto da
+  lista antiga) foi removida por não ter mais uso.
+- **Verificado ao vivo pela GUI real** (`GDK_BACKEND=x11`/`xdotool`/`spectacle`, tela livre):
+  comparação `main` ↔ `experiment` do mundo `TestWorld` (o mesmo mundo `medieval` de teste, com o
+  bloco editado em sessões anteriores) — grade de 32×32 renderizada corretamente com um único
+  chunk `(0, 0)` amarelo no canto, legenda (Added/Removed/Changed) visível abaixo, clique na
+  célula expandindo corretamente `Blocks changed in chunk (0, 0): (0, 0, 0):
+  minecraft:deepslate[axis=y] → minecraft:stone` — o mesmo dado que a lista de texto já mostrava
+  antes, só que agora alcançado clicando na célula em vez de um botão. `npx tsc --noEmit` limpo
+  (não há testes automatizados de componente React no projeto ainda — verificação é só via
+  typecheck + GUI real, mesmo padrão de todas as fatias de UI anteriores).
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

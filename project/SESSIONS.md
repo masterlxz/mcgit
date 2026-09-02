@@ -1135,3 +1135,46 @@ de verdade, ou virar pra Fase 2 (auto-snapshot/auto-gc), a critério do usuário
 adiante: passada de UX/identidade visual no app inteiro (memória, não bloqueio). Game Runner e
 login Microsoft seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge
 segue em aberto, não urgente.
+
+---
+
+## Sessão 9 (terceira continuação) — 2026-09-02 — Fase 4: mapa visual de chunks
+
+Usuário pediu direto pra seguir pro item visual ("segue para o visual então por favor") — o único
+item ainda em aberto da Fase 4. Escopo confirmado via `AskUserQuestion`: só o mapa de chunks por
+arquivo de região (não tentar visualizar blocos alterados dentro de um chunk, que continua como
+lista de texto); clicar num chunk `changed` na grade expande a lista de blocos abaixo, mesmo
+comportamento de antes, só trocando o gatilho de um botão pra célula da grade.
+
+**Pura mudança de frontend — nenhuma linha de Rust tocada.** Os dados já existiam desde a fatia
+"diff por chunk" (`diff_world_region_chunks` já devolve `{chunk_x, chunk_z, status}` por chunk);
+faltava só desenhar isso como grade em vez de lista de texto `(0, 0) changed`.
+
+Novo componente `RegionChunkMap.tsx`: grade CSS de 32×32 células coloridas por status
+(verde=added, vermelho=removed, amarelo=changed), com legenda e `title` nativo pro hover. Uma
+função nova em TypeScript, `parseRegionCoords`, espelha `mcgit_world::parse_region_coords` do
+lado Rust (mesma regra `r.<x>.<z>.mca`) pra converter coordenada absoluta de chunk em posição
+local `0..32` dentro da grade — não existia equivalente em JS até agora. `WorldBranches.tsx`: o
+`.map` que renderizava a lista de chunks virou função com corpo (pra computar variáveis antes do
+JSX), a lista de texto foi substituída pela grade, e o painel de blocos (antes dentro de cada
+item da lista) virou um bloco único abaixo, mostrado pelo mesmo estado `openBlocksFor` já
+existente. `describeChunkDiff` (só formatava a lista antiga) foi removida por ficar sem uso.
+
+Verificado ao vivo pela GUI real (`GDK_BACKEND=x11`/`xdotool`/`spectacle`, tela livre): comparação
+`main` ↔ `experiment` do `TestWorld` de teste — grade renderizando corretamente um único chunk
+`(0, 0)` amarelo, legenda visível, clique na célula expandindo `Blocks changed in chunk (0, 0):
+(0, 0, 0): minecraft:deepslate[axis=y] → minecraft:stone` — mesmo dado de antes, alcançado de
+outro jeito. `npx tsc --noEmit` limpo; projeto ainda não tem testes automatizados de componente
+React, então a verificação desta fatia é só typecheck + GUI real, mesmo padrão das fatias de UI
+anteriores.
+
+Detalhes completos em `ARCHITECTURE.md` §Fase 4 (subseção "Mapa visual de chunks — visualização
+de alterações"); checklist fechado em `PHASE.md` Fase 4 (item de visualização agora `[x]`).
+
+**Estado ao final da sessão**: Fase 4 tem 3 dos 4 itens totalmente completos (parser NBT `[x]`,
+estatísticas `[x]`, visualização `[x]`) — só "diff por chunk" segue `[~]`, porque o diff em si
+ainda não cobre entidades/estruturas/Nether-End (só estatísticas cobrem isso). Próxima frente
+natural: fechar essa lacuna do diff, ou virar pra Fase 2 (auto-snapshot/auto-gc), a critério do
+usuário. Pendente pra mais adiante: passada de UX/identidade visual no app inteiro (memória, não
+bloqueio). Game Runner e login Microsoft seguem pausados/bloqueados por `PENDING.md` #1; decisão
+de escopo do CurseForge segue em aberto, não urgente.
