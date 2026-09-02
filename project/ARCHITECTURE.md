@@ -573,6 +573,67 @@ frontend como verificação desta vez, sem a checagem visual ao vivo que todas a
 anteriores fizeram. Vale rodar essa checagem manualmente numa sessão futura, com a tela livre,
 antes de considerar este item no mesmo padrão de confiança dos anteriores.
 
+**Atualização (mesma sessão, continuação)**: a checagem ao vivo pendente acima foi feita — a
+tela ficou livre (o xadrez não estava mais aberto) durante o trabalho da "Comparação entre
+branches" logo a seguir, e a verificação cobriu criar/trocar branch retroativamente também. Ver
+detalhes na subseção "Comparação entre branches" abaixo.
+
+---
+
+### Comparação entre branches — implementado (Sessão 8, continuação, 2026-09-01)
+
+Segundo item da Fase 6, direto na sequência de "Criar/trocar de branch". Escopo confirmado com
+o usuário via `AskUserQuestion`: só compara a branch atual contra outra branch (não snapshots do
+histórico), e mostra uma lista de arquivos alterados com tamanho em bytes antes/depois —
+**nenhum diff de conteúdo**, já que a maioria dos arquivos de mundo (`.mca`, `level.dat`) é
+binária; diff de conteúdo de verdade é trabalho da Fase 4 (Minecraft-Aware World Diffing), que
+interpreta o formato.
+
+- **`diff_branches(world_dir, from, to)`** (novo em `git.rs`): roda
+  `git diff --name-status <from> <to>` pra saber quais arquivos mudaram e como (`A`/`M`/`D`);
+  pra cada um, uma chamada própria de `git cat-file -s <ref>:<path>` (de cada lado que existir)
+  dá o tamanho em bytes — evita depender do formato de texto humano do `git diff --stat` (que já
+  mostra `Bin X -> Y bytes` pra binários, mas pensado pra terminal, não pra parsear de forma
+  robusta), mantendo o mesmo estilo do resto do módulo: comandos `git` pequenos e de propósito
+  único.
+- **Sem detecção de rename**: não passa `-M`, não configura `diff.renames` — um arquivo
+  renomeado aparece como delete + add separados, mais simples de tratar do que reconstruir
+  renames, e Git não ativa isso por padrão de qualquer forma.
+- **Ponte Tauri**: `diff_world_branches` compara a branch atual do mundo (derivada via
+  `current_branch()`) contra uma branch informada — não pede duas branches explícitas, já que a
+  UI sempre sabe qual é a atual.
+- **UI**: botão "Compare" ao lado do "Switch" já existente em `WorldBranches.tsx`, por branch
+  não-atual. Expande inline (nunca modal) a lista de arquivos: status + caminho + tamanho antes
+  → depois (`"1.2 KB → 1.4 KB"`, `"new file, 340 bytes"`, `"deleted, was 890 bytes"`). Comparar
+  não muda nada, então não precisa de confirmação como `Switch`/criar branch precisam.
+- **Testes** (`mcgit-core`): arquivo adicionado, arquivo modificado, arquivo deletado, branches
+  idênticas (lista vazia). 32/32 verdes no crate.
+
+**Dois bugs reais de painel desatualizado encontrados e corrigidos durante a verificação ao
+vivo** (mesma classe do bug já corrigido na Sessão 5 pro histórico, e a mesma que motivou o
+cuidado proativo já tomado ao implementar `switch_branch` pro histórico logo acima):
+1. O painel de branches (`main (current)` etc.) não existia de verdade — não é bug, é
+   comportamento correto do Git: uma branch só existe como ref depois do primeiro commit. Mas o
+   painel, se já estava aberto, não se atualizava sozinho depois desse primeiro snapshot.
+2. O painel de comparação ficava mostrando dados obsoletos depois de um novo snapshot na branch
+   atual (o conteúdo comparado mudou, mas o painel não sabia).
+
+Corrigido em `InstanceDetailScreen.tsx`: `handleSaveSnapshot` agora re-busca `branchesByWorld` e
+`diffsByWorld` daquele mundo se já estavam carregados (mesmo padrão já usado pro histórico).
+Além disso, `handleCreateBranch`/`handleSwitchBranch` limpam qualquer comparação aberta, já que
+trocar a branch atual invalida semanticamente uma comparação computada contra a branch atual
+antiga.
+
+**Verificado ao vivo pela GUI real** (tela livre desta vez — o xadrez do início da sessão não
+estava mais aberto): mundo versionado, primeiro snapshot salvo, branch "experiment" criada e
+trocada (confirmado: `list_branches`/`current_branch` corretos antes e depois), mudança real no
+mundo (arquivo modificado + arquivo novo) commitada na branch "experiment", comparação com
+"main" mostrando corretamente `modified — level.dat — 35 bytes → 19 bytes` e
+`deleted — r.0.0.mca — deleted, was 31 bytes`; painel de branches e de comparação confirmados
+se auto-atualizando depois de um snapshot novo (a correção acima, testada ao vivo, não só nos
+testes automatizados); comparação confirmada limpa depois de trocar de volta pra "main". Também
+serviu como verificação retroativa de "Criar/trocar de branch" (pendente da sessão anterior).
+
 ---
 
 ## Modo Básico/Avançado — implementado (Sessão 7, 2026-08-22, continuação)

@@ -364,6 +364,83 @@ pub fn switch_branch(world_dir: &Path, name: &str) -> Result<SwitchOutcome, Bran
     })
 }
 
+/// Whether a changed file was added, modified, or deleted between two refs.
+/// Rename detection is deliberately not enabled (no `-M`, no `diff.renames`
+/// config), so a renamed file shows up as a `Deleted` + `Added` pair instead
+/// of its own variant — simpler to reason about than reconstructing renames,
+/// and good enough for a file-level summary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangeStatus {
+    Added,
+    Modified,
+    Deleted,
+}
+
+/// One file that differs between two refs, with its size in bytes on each
+/// side (`None` when the file doesn't exist on that side, i.e. it was added
+/// or deleted). No attempt is made to diff *content* — most world files
+/// (`.mca`, `level.dat`) are binary, so a line-level diff wouldn't mean
+/// anything; a real content-aware diff is Fase 4's job, which actually
+/// interprets the format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileChange {
+    pub path: String,
+    pub status: ChangeStatus,
+    pub old_size: Option<u64>,
+    pub new_size: Option<u64>,
+}
+
+/// The size in bytes of `path` as it exists at `git_ref`, via
+/// `git cat-file -s <git_ref>:<path>` — one small, single-purpose command
+/// rather than parsing `git diff --stat`'s human-formatted "Bin X -> Y
+/// bytes" text.
+fn blob_size(world_dir: &Path, git_ref: &str, path: &str) -> Result<u64, GitError> {
+    let output = run(world_dir, &["cat-file", "-s", &format!("{git_ref}:{path}")])?;
+    trimmed_stdout(output)
+        .parse()
+        .map_err(|_| GitError::CommandFailed(format!("unexpected `git cat-file -s` output for {path}")))
+}
+
+/// Lists every file that differs between `from` and `to`, with its size on
+/// each side. File-level only — see `FileChange` for why there's no content
+/// diff here.
+pub fn diff_branches(world_dir: &Path, from: &str, to: &str) -> Result<Vec<FileChange>, GitError> {
+    let output = run(world_dir, &["diff", "--name-status", from, to])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let mut changes = Vec::new();
+    for line in stdout.lines() {
+        let mut fields = line.splitn(2, '\t');
+        let (Some(code), Some(path)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        let status = match code {
+            "A" => ChangeStatus::Added,
+            "M" => ChangeStatus::Modified,
+            "D" => ChangeStatus::Deleted,
+            _ => continue,
+        };
+
+        let old_size = match status {
+            ChangeStatus::Added => None,
+            _ => Some(blob_size(world_dir, from, path)?),
+        };
+        let new_size = match status {
+            ChangeStatus::Deleted => None,
+            _ => Some(blob_size(world_dir, to, path)?),
+        };
+
+        changes.push(FileChange {
+            path: path.to_string(),
+            status,
+            old_size,
+            new_size,
+        });
+    }
+
+    Ok(changes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -901,5 +978,88 @@ mod tests {
         assert!(branches.contains(&original));
         assert!(branches.contains(&"experiment-1".to_string()));
         assert!(branches.contains(&"experiment-2".to_string()));
+    }
+
+    #[test]
+    fn diff_branches_reports_added_file() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-diff-added-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        commit(&world_dir, "A").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("new_region.mca"), b"new file contents").unwrap();
+        commit(&world_dir, "Add region").unwrap();
+
+        let changes = diff_branches(&world_dir, &main, "experiment").unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "new_region.mca");
+        assert_eq!(changes[0].status, ChangeStatus::Added);
+        assert_eq!(changes[0].old_size, None);
+        assert_eq!(changes[0].new_size, Some(17));
+    }
+
+    #[test]
+    fn diff_branches_reports_modified_file() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-diff-modified-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"aaa").unwrap();
+        commit(&world_dir, "A").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"aaaaaaa").unwrap();
+        commit(&world_dir, "Grow level.dat").unwrap();
+
+        let changes = diff_branches(&world_dir, &main, "experiment").unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "level.dat");
+        assert_eq!(changes[0].status, ChangeStatus::Modified);
+        assert_eq!(changes[0].old_size, Some(3));
+        assert_eq!(changes[0].new_size, Some(7));
+    }
+
+    #[test]
+    fn diff_branches_reports_deleted_file() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-diff-deleted-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        std::fs::write(world_dir.join("old_region.mca"), b"gone soon").unwrap();
+        commit(&world_dir, "A").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::remove_file(world_dir.join("old_region.mca")).unwrap();
+        commit(&world_dir, "Remove region").unwrap();
+
+        let changes = diff_branches(&world_dir, &main, "experiment").unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "old_region.mca");
+        assert_eq!(changes[0].status, ChangeStatus::Deleted);
+        assert_eq!(changes[0].old_size, Some(9));
+        assert_eq!(changes[0].new_size, None);
+    }
+
+    #[test]
+    fn diff_branches_between_identical_branches_returns_empty() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-diff-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
+        commit(&world_dir, "A").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+
+        let changes = diff_branches(&world_dir, &main, "experiment").unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(changes.is_empty());
     }
 }

@@ -74,3 +74,18 @@ export function switchWorldBranch(
 ): Promise<SwitchResult> {
   return invoke("switch_world_branch", { instanceId, folderName, name });
 }
+
+export type FileChange = {
+  path: string;
+  status: "added" | "modified" | "deleted";
+  old_size: number | null;
+  new_size: number | null;
+};
+
+export function diffWorldBranches(
+  instanceId: number,
+  folderName: string,
+  otherBranch: string,
+): Promise<FileChange[]> {
+  return invoke("diff_world_branches", { instanceId, folderName, otherBranch });
+}

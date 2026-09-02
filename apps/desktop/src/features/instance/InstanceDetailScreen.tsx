@@ -5,6 +5,7 @@ import {
   createWorldBranch,
   createWorldSnapshot,
   deleteWorldSnapshot,
+  diffWorldBranches,
   disableWorldVersioning,
   enableWorldVersioning,
   listWorldBranches,
@@ -13,6 +14,7 @@ import {
   restoreWorldVersion,
   switchWorldBranch,
   type Branch,
+  type FileChange,
   type Snapshot,
   type World,
 } from "../../api/world";
@@ -26,6 +28,9 @@ export function InstanceDetailScreen() {
   const [worlds, setWorlds] = useState<World[]>([]);
   const [historyByWorld, setHistoryByWorld] = useState<Record<string, Snapshot[] | undefined>>({});
   const [branchesByWorld, setBranchesByWorld] = useState<Record<string, Branch[] | undefined>>({});
+  const [diffsByWorld, setDiffsByWorld] = useState<
+    Record<string, { otherBranch: string; changes: FileChange[] } | undefined>
+  >({});
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -70,6 +75,15 @@ export function InstanceDetailScreen() {
       setStatus(result.created ? "Snapshot saved." : "Nothing changed since the last snapshot.");
       if (result.created && historyByWorld[folderName] !== undefined) {
         await handleShowHistory(folderName);
+      }
+      // A snapshot changes the current branch's tip (and, on the very first
+      // snapshot, is what makes the branch exist as a real ref at all) —
+      // keep the branches panel and any open comparison in sync if open.
+      if (result.created && branchesByWorld[folderName] !== undefined) {
+        await handleShowBranches(folderName);
+      }
+      if (result.created && diffsByWorld[folderName] !== undefined) {
+        await handleCompareBranch(folderName, diffsByWorld[folderName]!.otherBranch);
       }
     } catch (err) {
       setError(String(err));
@@ -134,6 +148,9 @@ export function InstanceDetailScreen() {
       const branches = await createWorldBranch(instanceId, folderName, name);
       setBranchesByWorld((prev) => ({ ...prev, [folderName]: branches }));
       setStatus(`Created and switched to branch "${name}".`);
+      // The current branch just changed, so any open comparison (computed
+      // against the old current branch) is no longer meaningful.
+      setDiffsByWorld((prev) => ({ ...prev, [folderName]: undefined }));
     } catch (err) {
       setError(String(err));
     }
@@ -155,6 +172,19 @@ export function InstanceDetailScreen() {
       if (historyByWorld[folderName] !== undefined) {
         await handleShowHistory(folderName);
       }
+      // The current branch just changed, so any open comparison (computed
+      // against the old current branch) is no longer meaningful.
+      setDiffsByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleCompareBranch(folderName: string, otherBranch: string) {
+    setError(null);
+    try {
+      const changes = await diffWorldBranches(instanceId, folderName, otherBranch);
+      setDiffsByWorld((prev) => ({ ...prev, [folderName]: { otherBranch, changes } }));
     } catch (err) {
       setError(String(err));
     }
@@ -174,6 +204,7 @@ export function InstanceDetailScreen() {
         worlds={worlds}
         historyByWorld={historyByWorld}
         branchesByWorld={branchesByWorld}
+        diffsByWorld={diffsByWorld}
         onToggleVersioning={handleToggleVersioning}
         onSaveSnapshot={handleSaveSnapshot}
         onShowHistory={handleShowHistory}
@@ -182,6 +213,7 @@ export function InstanceDetailScreen() {
         onShowBranches={handleShowBranches}
         onCreateBranch={handleCreateBranch}
         onSwitchBranch={handleSwitchBranch}
+        onCompareBranch={handleCompareBranch}
       />
     </section>
   );

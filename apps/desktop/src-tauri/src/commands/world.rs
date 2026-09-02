@@ -331,3 +331,52 @@ pub async fn switch_world_branch(
         branch: outcome.branch,
     })
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileChangeDto {
+    pub path: String,
+    pub status: String,
+    pub old_size: Option<u64>,
+    pub new_size: Option<u64>,
+}
+
+impl From<mcgit_core::git::FileChange> for FileChangeDto {
+    fn from(change: mcgit_core::git::FileChange) -> Self {
+        let status = match change.status {
+            mcgit_core::git::ChangeStatus::Added => "added",
+            mcgit_core::git::ChangeStatus::Modified => "modified",
+            mcgit_core::git::ChangeStatus::Deleted => "deleted",
+        };
+        FileChangeDto {
+            path: change.path,
+            status: status.to_string(),
+            old_size: change.old_size,
+            new_size: change.new_size,
+        }
+    }
+}
+
+/// Compares the world's current branch against `other_branch`, file by
+/// file. No content diff — see `mcgit_core::git::FileChange`.
+#[tauri::command]
+pub async fn diff_world_branches(
+    instance_id: i64,
+    folder_name: String,
+    other_branch: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<FileChangeDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    let changes = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        let current = mcgit_core::git::current_branch(&world_dir)?;
+        mcgit_core::git::diff_branches(&world_dir, &current, &other_branch)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(changes.into_iter().map(FileChangeDto::from).collect())
+}

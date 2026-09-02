@@ -801,3 +801,49 @@ automatizado, pendente de verificação visual ao vivo numa sessão futura. Pró
 6: comparação entre branches, investigar se/como merge faz sentido pra arquivos de mundo (ainda
 em aberto). Game Runner e login Microsoft seguem pausados/bloqueados por `PENDING.md` #1;
 decisão de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 8 (continuação) — 2026-09-01 — Fase 6: Comparação entre branches
+
+Continuação direta da mesma sessão. Escopo confirmado com o usuário via `AskUserQuestion`: só
+comparar a branch atual com outra branch (não snapshots do histórico), mostrando lista de
+arquivos alterados com tamanho em bytes antes/depois — sem diff de conteúdo, já que a maioria
+dos arquivos de mundo é binária (isso é trabalho da Fase 4).
+
+`git.rs` ganha `diff_branches()`: `git diff --name-status` pra saber quais arquivos mudaram
+(`A`/`M`/`D`, sem detecção de rename), mais uma chamada de `git cat-file -s <ref>:<path>` por
+arquivo pra pegar o tamanho em bytes de cada lado — evita parsear o texto humano do
+`git diff --stat`. Novo comando Tauri `diff_world_branches` (compara a branch atual contra uma
+branch informada). Novo botão "Compare" por branch não-atual em `WorldBranches.tsx`, expandindo
+inline a lista de arquivos (sem modal, sem confirmação — comparar não muda nada). 4 testes
+novos (32/32 verdes no crate); frontend compila limpo.
+
+Esta sessão finalmente teve a tela livre (a partida de xadrez do início não estava mais aberta),
+então a verificação ao vivo pela GUI real aconteceu de verdade — cobrindo tanto esta feature
+quanto, retroativamente, "Criar/trocar de branch" da sessão anterior (que tinha ficado só com
+teste automatizado). **Dois bugs reais de painel desatualizado encontrados e corrigidos durante
+essa verificação** (mesma classe do bug já corrigido na Sessão 5 pro histórico): o painel de
+branches e o de comparação não se atualizavam sozinhos depois de um novo snapshot enquanto já
+estavam abertos, e o painel de comparação ficava mostrando dados obsoletos depois de trocar de
+branch. Corrigido em `InstanceDetailScreen.tsx`: `handleSaveSnapshot` agora re-busca os dois
+painéis se já estavam carregados; `handleCreateBranch`/`handleSwitchBranch` limpam qualquer
+comparação aberta ao trocar a branch atual. As duas correções foram verificadas ao vivo, não só
+nos testes.
+
+**Achado de ambiente também vale registrar**: a técnica de GUI-driving (`GDK_BACKEND=x11` +
+`xdotool` + `spectacle`) funcionou perfeitamente assim que a tela ficou livre — a janela do
+mcgit apareceu genuinamente por cima (confirmado com um screenshot de tela cheia, não só o `-a`
+de janela ativa) e cliques de mouse com coordenadas absolutas de tela funcionaram normalmente.
+A lição da continuação anterior (checar se a tela está livre antes de tentar) se confirmou como
+o único ajuste necessário — nenhuma mudança na técnica em si.
+
+Detalhes técnicos completos em `ARCHITECTURE.md` §Git Engine (subseção "Comparação entre
+branches"); checklist atualizado em `PHASE.md` Fase 6.
+
+**Estado ao final da sessão**: dois dos três itens da Fase 6 implementados e verificados ao
+vivo — criar/trocar de branch, comparação entre branches. Resta investigar se/como merge faz
+sentido pra arquivos de mundo (ainda em aberto, não urgente). Próxima frente natural da trilha
+priorizada: Fase 2 (qualidade do versionamento — auto-snapshot, auto-gc) ou Fase 4 (diff entre
+snapshots), a critério do usuário. Game Runner e login Microsoft seguem pausados/bloqueados por
+`PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não urgente.

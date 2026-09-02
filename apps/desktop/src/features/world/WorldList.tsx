@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAdvancedMode } from "../../context/AdvancedModeContext";
-import type { Branch, Snapshot, World } from "../../api/world";
+import type { Branch, FileChange, Snapshot, World } from "../../api/world";
 import { SaveSnapshotForm } from "./SaveSnapshotForm";
 import { WorldHistory } from "./WorldHistory";
 import { WorldBranches } from "./WorldBranches";
@@ -9,6 +9,7 @@ type Props = {
   worlds: World[];
   historyByWorld: Record<string, Snapshot[] | undefined>;
   branchesByWorld: Record<string, Branch[] | undefined>;
+  diffsByWorld: Record<string, { otherBranch: string; changes: FileChange[] } | undefined>;
   onToggleVersioning: (folderName: string, enable: boolean) => void;
   onSaveSnapshot: (folderName: string, message: string) => void;
   onShowHistory: (folderName: string) => void;
@@ -17,12 +18,14 @@ type Props = {
   onShowBranches: (folderName: string) => void;
   onCreateBranch: (folderName: string, name: string) => void;
   onSwitchBranch: (folderName: string, name: string) => void;
+  onCompareBranch: (folderName: string, otherBranch: string) => void;
 };
 
 export function WorldList({
   worlds,
   historyByWorld,
   branchesByWorld,
+  diffsByWorld,
   onToggleVersioning,
   onSaveSnapshot,
   onShowHistory,
@@ -31,6 +34,7 @@ export function WorldList({
   onShowBranches,
   onCreateBranch,
   onSwitchBranch,
+  onCompareBranch,
 }: Props) {
   const [openHistoryFor, setOpenHistoryFor] = useState<Set<string>>(new Set());
   const [openBranchesFor, setOpenBranchesFor] = useState<Set<string>>(new Set());
@@ -95,8 +99,10 @@ export function WorldList({
                   {openBranchesFor.has(world.folder_name) && (
                     <WorldBranches
                       branches={branchesByWorld[world.folder_name] ?? []}
+                      diff={diffsByWorld[world.folder_name]}
                       onCreate={(name) => onCreateBranch(world.folder_name, name)}
                       onSwitch={(name) => onSwitchBranch(world.folder_name, name)}
+                      onCompare={(name) => onCompareBranch(world.folder_name, name)}
                     />
                   )}
                 </>

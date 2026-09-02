@@ -351,7 +351,30 @@ mcgit checkout main
   a checagem visual ao vivo que as sessões anteriores sempre fizeram. Vale rodar essa checagem
   manualmente numa sessão futura antes de considerar o item 100% fechado no mesmo padrão de
   confiança dos itens anteriores.
-- [ ] Comparação entre branches/versões
+- [x] Comparação entre branches, implementado (Sessão 8, continuação, 2026-09-01). Escopo
+  confirmado com o usuário via `AskUserQuestion`: só compara a branch atual com outra branch
+  (não snapshots do histórico) e mostra uma lista de arquivos alterados com tamanho em bytes
+  antes/depois — nenhum diff de conteúdo, já que a maioria dos arquivos de mundo é binária (isso
+  é trabalho da Fase 4, que interpreta o formato de verdade). `git.rs` ganha `diff_branches()`
+  (`git diff --name-status` pra saber que arquivos mudaram + `A`/`M`/`D`, mais uma chamada de
+  `git cat-file -s <ref>:<path>` por arquivo pra pegar o tamanho em bytes de cada lado — evita
+  parsear o `Bin X -> Y bytes` de texto humano do `git diff --stat`). Sem detecção de rename
+  (não ativada por padrão no Git). Novo comando Tauri `diff_world_branches` (compara a branch
+  atual contra uma branch informada). Novo botão "Compare" por branch não-atual em
+  `WorldBranches.tsx`, expandindo inline a lista de arquivos (sem modal). 4 testes novos em
+  `git.rs` (32/32 verdes no crate); frontend compila limpo. **Dois bugs reais de painel
+  desatualizado encontrados e corrigidos durante a verificação ao vivo** (mesma classe do bug já
+  corrigido na Sessão 5 pro histórico): o painel de branches e o de comparação não se atualizavam
+  sozinhos depois de um novo snapshot enquanto já estavam abertos — corrigido fazendo
+  `handleSaveSnapshot` re-buscar os dois se já estavam carregados; e o painel de comparação
+  ficava mostrando uma comparação obsoleta depois de trocar de branch (já que a "branch atual" da
+  comparação tinha mudado) — corrigido limpando a comparação aberta em `handleCreateBranch`/
+  `handleSwitchBranch`. **Verificado ao vivo pela GUI real** (tela livre desta vez): branch
+  "experiment" criada e trocada, snapshot com conteúdo diferente salvo nela, comparação com
+  "main" mostrando corretamente `modified — level.dat — 35 bytes → 19 bytes` e
+  `deleted — r.0.0.mca — deleted, was 31 bytes`; painel de branches e de comparação atualizando
+  sozinhos após snapshot novo; comparação limpa corretamente depois de trocar de branch de volta
+  pra "main". Detalhes completos em `ARCHITECTURE.md` §Git Engine.
 - [ ] Investigar se/como merge faz sentido tecnicamente para arquivos de mundo (não assumir que é seguro — ver `ARCHITECTURE.md`)
 
 ---

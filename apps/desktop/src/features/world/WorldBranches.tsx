@@ -1,15 +1,44 @@
 import { useState } from "react";
-import type { Branch } from "../../api/world";
+import type { Branch, FileChange } from "../../api/world";
 
 type Props = {
   branches: Branch[];
+  diff: { otherBranch: string; changes: FileChange[] } | undefined;
   onCreate: (name: string) => void;
   onSwitch: (name: string) => void;
+  onCompare: (name: string) => void;
 };
 
-export function WorldBranches({ branches, onCreate, onSwitch }: Props) {
+function formatSize(bytes: number | null): string {
+  if (bytes === null) return "";
+  if (bytes < 1024) return `${bytes} bytes`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function describeChange(change: FileChange): string {
+  switch (change.status) {
+    case "added":
+      return `new file, ${formatSize(change.new_size)}`;
+    case "deleted":
+      return `deleted, was ${formatSize(change.old_size)}`;
+    case "modified":
+      return `${formatSize(change.old_size)} → ${formatSize(change.new_size)}`;
+  }
+}
+
+export function WorldBranches({ branches, diff, onCreate, onSwitch, onCompare }: Props) {
   const [newBranchName, setNewBranchName] = useState("");
   const [confirmingSwitchFor, setConfirmingSwitchFor] = useState<string | null>(null);
+  const [openDiffFor, setOpenDiffFor] = useState<string | null>(null);
+
+  function toggleDiff(name: string) {
+    if (openDiffFor === name) {
+      setOpenDiffFor(null);
+    } else {
+      setOpenDiffFor(name);
+      onCompare(name);
+    }
+  }
 
   return (
     <div>
@@ -51,7 +80,28 @@ export function WorldBranches({ branches, onCreate, onSwitch }: Props) {
               </>
             )}
             {!branch.is_current && confirmingSwitchFor !== branch.name && (
-              <button onClick={() => setConfirmingSwitchFor(branch.name)}>Switch</button>
+              <>
+                <button onClick={() => setConfirmingSwitchFor(branch.name)}>Switch</button>
+                <button onClick={() => toggleDiff(branch.name)}>
+                  {openDiffFor === branch.name ? "Hide compare" : "Compare"}
+                </button>
+              </>
+            )}
+            {!branch.is_current && openDiffFor === branch.name && (
+              <ul>
+                {diff && diff.otherBranch === branch.name && diff.changes.length === 0 && (
+                  <li>
+                    <em>No differences from the current branch.</em>
+                  </li>
+                )}
+                {diff &&
+                  diff.otherBranch === branch.name &&
+                  diff.changes.map((change) => (
+                    <li key={change.path}>
+                      {change.status} — {change.path} — {describeChange(change)}
+                    </li>
+                  ))}
+              </ul>
             )}
           </li>
         ))}

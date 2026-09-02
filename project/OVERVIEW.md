@@ -33,7 +33,7 @@ Fase 2  — Qualidade do Versionamento                [ ] Priorizada (ver nota d
 Fase 3  — Modloaders, Mods & Modpacks               [ ] Não iniciada (adiada — ver nota abaixo)
 Fase 4  — Minecraft-Aware World Diffing             [ ] Priorizada (ver nota de reordenação abaixo)
 Fase 5  — Skins, Backup Inteligente & Sincronização [ ] Não iniciada (adiada — ver nota abaixo)
-Fase 6  — Branching de Mundos                       [~] Em andamento (criar/trocar branch implementado — ver PHASE.md)
+Fase 6  — Branching de Mundos                       [~] Em andamento (criar/trocar branch + comparação implementados — ver PHASE.md)
 Fase 7  — Arweave + TruthID                         [ ] Não iniciada (adiada — ver nota abaixo)
 Fase 8  — Compartilhamento & Reprodutibilidade      [ ] Não iniciada
 Fase 9  — Servidores                                [ ] Não iniciada
