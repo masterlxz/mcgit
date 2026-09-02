@@ -11,13 +11,17 @@ export function JavaInstallationList({ installations, onSetDefault }: Props) {
   }
 
   return (
-    <ul>
+    <ul className="install-list">
       {installations.map((installation) => (
         <li key={installation.id}>
-          <strong>Java {installation.major_version}</strong> — {installation.vendor} (
-          {installation.source}) — <code>{installation.path}</code>
+          <span>
+            <strong>Java {installation.major_version}</strong>{" "}
+            <span className="install-info">
+              — {installation.vendor} ({installation.source}) — <code>{installation.path}</code>
+            </span>
+          </span>
           {installation.is_default ? (
-            <span> — default</span>
+            <span className="install-default">Default</span>
           ) : (
             <button onClick={() => onSetDefault(installation.id)}>
               Set as default

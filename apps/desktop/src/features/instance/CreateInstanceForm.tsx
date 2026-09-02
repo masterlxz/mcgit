@@ -25,7 +25,7 @@ export function CreateInstanceForm({ versions, onCreate, disabled }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form className="inline-form" onSubmit={handleSubmit}>
       <input
         type="text"
         placeholder="Instance name"
@@ -47,7 +47,11 @@ export function CreateInstanceForm({ versions, onCreate, disabled }: Props) {
           </option>
         ))}
       </select>
-      <button type="submit" disabled={disabled || name.trim() === "" || selectedVersion === null}>
+      <button
+        type="submit"
+        className="btn-primary"
+        disabled={disabled || name.trim() === "" || selectedVersion === null}
+      >
         Create instance
       </button>
     </form>

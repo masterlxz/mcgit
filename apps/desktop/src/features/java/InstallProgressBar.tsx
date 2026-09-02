@@ -11,7 +11,7 @@ export function InstallProgressBar({ progress }: Props) {
       : null;
 
   return (
-    <div>
+    <div className="progress-block">
       <p>
         Installing Java {progress.major_version} — {progress.stage}
         {percent !== null ? ` (${percent}%)` : ""}

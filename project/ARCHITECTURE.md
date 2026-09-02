@@ -1190,6 +1190,116 @@ foi limpo de volta ao estado anterior à sessão.
 
 ---
 
+## Identidade Visual & Design System (Sessão 10, continuação, 2026-09-02)
+
+Primeira passada de UX de verdade no app — até aqui a GUI (Tauri + React) era o template padrão
+do Vite, sem tema nem componentes visuais próprios (`App.css` nunca tocado desde o scaffold da
+Sessão 2). Pedida pelo usuário logo depois de fechar a Fase 4 ("passada de UX/identidade
+visual"), registrada como pendência de sequenciamento desde a Sessão 9 (ver
+`project_mcgit_ux_polish` na memória).
+
+**Escopo confirmado com o usuário via `AskUserQuestion` antes de codar** (duas perguntas): (1) o
+tom exato do vermelho — três direções mostradas (crimson sóbrio, vivo/redstone, terroso/tijolo)
+com preview de hex + descrição de sensação; escolhido **vivo/redstone**; (2) fatiamento — em vez
+do app inteiro numa sessão só, **fundação (design system) + telas principais** (Instances,
+Instance detail — só o chrome da página, não `WorldList`/`WorldHistory`/`WorldBranches`/stats/
+chunk map, que ficam pra uma fatia seguinte —, Java), deixando o resto herdar a base
+automaticamente.
+
+### Paleta e tokens
+
+`apps/desktop/src/App.css` reescrito do zero como um design system pequeno baseado em CSS custom
+properties, claro por padrão com override completo em `@media (prefers-color-scheme: dark)` —
+mesmo mecanismo que o template já usava, sem toggle explícito de tema (não pedido).
+
+```
+Claro:  bg #faf7f6  surface #ffffff  border #e4dad8  text #201a1a  text-muted #6b5f5d
+        primary #e11d2e → hover #c81726 → active #b01220  (contraste branco em cima)
+Escuro: bg #1b1414  surface #241a1a  border #3d2c2b  text #f3e9e8  text-muted #c2afac
+        primary #ff4c57 → hover #ff6871 → active #e11d2e  (mais claro, precisa de mais luz
+        contra um fundo escuro pra manter a mesma legibilidade que o tom do modo claro)
+```
+
+`--color-danger`/`--color-success`/`--color-warning` mantidos como já estavam implicitamente
+usados (ex.: `RegionChunkMap.tsx` já tinha `#c62828`/`#2e7d32`/`#f9a825` hard-coded pro mapa de
+chunks da Fase 4) — não redefinidos como tokens novos nesta fatia porque essa tela específica não
+foi tocada (fica pra fatia seguinte), mas os valores foram escolhidos deliberadamente distintos o
+bastante do vermelho de marca pra não colidir visualmente quando essa tela ganhar os tokens de
+verdade depois.
+
+### Componentes base (afetam o app inteiro de graça)
+
+Sem nenhuma mudança de markup, todo `<button>`/`<input>`/`<select>`/`<a>`/`<h1-3>`/`<code>`
+existente no app passa a herdar tipografia, espaçamento, cor de foco (anel vermelho via
+`box-shadow` + `color-mix()`) e um hover/active discreto (borda fica vermelha, sem preencher —
+reserva o preenchimento sólido pra ação primária). Isso é o que faz `WorldList`/`WorldHistory`/
+`WorldBranches` (não tocados nesta fatia) já saírem visualmente mais limpos na verificação ao
+vivo, mesmo sem receber nenhuma classe nova.
+
+Duas variantes semânticas de botão, aplicadas manualmente onde fazem sentido (não é global,
+precisa da classe):
+
+- **`.btn-primary`** — preenchimento vermelho sólido, texto branco. A ação que a tela mais quer
+  que o jogador tome (Create instance, Install, ...). Estado `:disabled` sempre cai pro cinza
+  neutro, nunca fica "vermelho desabilitado" (evita parecer um erro/aviso).
+- **`.btn-danger`** — contorno vermelho de perigo (`--color-danger`, tom diferente do
+  `--color-primary` de marca), preenche sólido só no hover. Não usado ainda nesta fatia (as
+  ações destrutivas do app — Disable versioning, Delete snapshot, Abort merge — vivem todas
+  dentro de `WorldList`, fora do escopo desta sessão), mas já definido no design system pra
+  quando a fatia seguinte chegar lá.
+
+### Telas aplicadas
+
+- **`App.tsx`**: nav vira uma barra de verdade — wordmark "mcgit" em vermelho à esquerda (link
+  pra home), links de navegação + toggle de Modo Avançado agrupados à direita, separados por uma
+  borda inferior sutil.
+- **`InstanceManagerScreen.tsx`/`InstanceList.tsx`/`CreateInstanceForm.tsx`**: a lista de
+  instâncias vira uma grade de cards (`.card-grid`/`.card`, `grid-template-columns:
+  repeat(auto-fill, minmax(220px, 1fr))` — mais perto do mockup original do `CONTEXT.md` do que
+  a lista `<ul>` plana de antes) em vez de estilo inline por item; formulário de criação virou
+  sua própria seção "Create instance" abaixo da lista (com `<hr class="section-divider">`), não
+  mais espremido logo depois — decisão de layout, não só de cor. Botão "Create instance" ganha
+  `.btn-primary`.
+- **`InstanceDetailScreen.tsx`**: só o chrome da página (link "← Instances", cabeçalho, banners
+  de erro/status via `.banner`/`.banner-error`/`.banner-status` em vez de `style={{color:
+  "crimson"}}` inline) — o que `WorldList` renderiza dentro continua exatamente como estava.
+- **`JavaManagerScreen.tsx`/`JavaInstallationList.tsx`/`JavaVersionPicker.tsx`/
+  `AddManualJavaForm.tsx`**: lista de instalações vira `.install-list` (uma linha por
+  instalação, ação à direita — layout de lista, não de card, já que uma instalação de Java tem
+  menos "identidade visual" que uma instância pra merecer um card próprio); "default" em verde
+  (`--color-success`) em vez de texto puro; página reorganizada em três seções com `<h2>`
+  próprios ("Install a Java version", "Add manually") em vez de tudo solto sequencialmente;
+  botão "Install" ganha `.btn-primary`.
+- **`InstallProgressBar.tsx`/`InstanceInstallProgressBar.tsx`**: `<progress>` nativo estilizado
+  via `::-webkit-progress-bar`/`::-webkit-progress-value` (barra vermelha de marca sobre trilha
+  neutra, cantos arredondados), envolto num `.progress-block` com borda e fundo sutil.
+
+### Verificação
+
+`npx tsc --noEmit` limpo (nenhuma prop nova, só classes CSS e reorganização de JSX). Nenhum
+Rust tocado. Verificado ao vivo pela GUI real (`GDK_BACKEND=x11`/`xdotool`, `npx tauri dev`) nas
+três telas do escopo — Instances (grade de cards, formulário de criação, botão primário),
+Instance detail (cabeçalho/banners, mundo listado herdando os estilos base sem nenhuma classe
+nova), Java (lista de instalações, seções, dropdown com anel de foco vermelho, botão "Install"
+preenchido de vermelho quando uma versão é selecionada). **Achado de metodologia, não bug do
+app**: a primeira leva de screenshots (`spectacle -b -n`, captura de desktop inteiro) mostrava
+blocos vermelhos/verdes sólidos "vazando" através da janela do app, alinhados pixel a pixel com
+as linhas de diff (removido/adicionado) do editor de código atrás dela — parecia uma
+transparência real da janela. Recapturar com `spectacle -b -a` (captura só o buffer da janela
+ativa, não o compositor de desktop inteiro) mostrou o app renderizado perfeitamente opaco, sem
+nenhum buraco — confirma que era um artefato de composição do desktop (KDE/Wayland via
+XWayland, mesma pilha usada pra forçar o WebKitGTK a abrir) capturado no momento exato do
+`spectacle -n`, não um bug de CSS/transparência real da aplicação. Vale lembrar: se um "buraco"
+aparecer numa screenshot de área de trabalho completa desta app novamente, testar com `-a`
+antes de investigar como se fosse um bug de renderização.
+
+**Estado ao final desta fatia**: fundação (paleta, tipografia, botões/inputs base) e as três
+telas principais (Instances, Instance detail chrome, Java) aplicadas e verificadas. Pendente pra
+uma fatia seguinte: `WorldList`/`WorldHistory`/`WorldBranches`/painel de stats/mapa de chunks da
+Fase 4 (hoje só herdam a base, sem layout/classe própria), ícone do app, favicon.
+
+---
+
 ## Schema do Banco Local (SQLite) — proposta inicial
 
 ```sql

@@ -72,7 +72,12 @@ O usuário mantém um ecossistema de projetos onde cada um tem uma cor própria 
 Anchor é verde, TruthID é azul, Warden é roxo. **mcgit é vermelho** (decidido na Sessão 2,
 2026-08-16) — mcgit faz parte desse mesmo ecossistema.
 
-Ainda não decidido: o tom exato de vermelho (hex/paleta), nem a aplicação prática (ícone do
-app, tema da GUI Tauri/React, favicon, etc.) — isso fica pra quando o trabalho de design
-system/tema da interface começar de verdade. Por enquanto é só a cor-conceito registrada, pra
-não se perder e pra guiar decisões de design quando chegarem.
+Ainda não decidido: o ícone do app nem o favicon — isso fica pra uma sessão futura.
+
+**Tom exato decidido (Sessão 10, continuação, 2026-09-02)**: vermelho vivo, tipo "Minecraft
+redstone" — `#E11D2E` no modo claro, `#FF4C57` no modo escuro (mais claro pra manter contraste
+num fundo escuro), escolhido pelo usuário entre três direções (crimson sóbrio, vivo/redstone,
+terroso/tijolo) via `AskUserQuestion`. Aplicado como paleta de tokens CSS completa (fundo,
+superfície, texto, bordas, primário, perigo, sucesso, aviso — claro e escuro via
+`prefers-color-scheme`, sem toggle explícito de tema ainda) em `apps/desktop/src/App.css`.
+Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System.

@@ -9,6 +9,7 @@ export function AddManualJavaForm({ onAdd }: Props) {
 
   return (
     <form
+      className="inline-form"
       onSubmit={(e) => {
         e.preventDefault();
         if (path.trim()) {
@@ -17,14 +18,12 @@ export function AddManualJavaForm({ onAdd }: Props) {
         }
       }}
     >
-      <label>
-        Point at an existing Java installation:{" "}
-        <input
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          placeholder="/path/to/java"
-        />
-      </label>
+      <label>Point at an existing Java installation:</label>
+      <input
+        value={path}
+        onChange={(e) => setPath(e.target.value)}
+        placeholder="/path/to/java"
+      />
       <button type="submit">Add</button>
     </form>
   );

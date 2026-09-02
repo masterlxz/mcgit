@@ -60,13 +60,15 @@ export function InstanceManagerScreen() {
   return (
     <section>
       <h1>Instances</h1>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="banner banner-error">{error}</p>}
 
       <InstanceList instances={instances} />
 
-      <CreateInstanceForm versions={mcVersions} onCreate={handleCreate} disabled={busy} />
-
       {progress && <InstanceInstallProgressBar progress={progress} />}
+
+      <hr className="section-divider" />
+      <h2>Create instance</h2>
+      <CreateInstanceForm versions={mcVersions} onCreate={handleCreate} disabled={busy} />
     </section>
   );
 }

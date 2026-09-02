@@ -1224,3 +1224,50 @@ itens implementados e verificados ao vivo.
 (auto-snapshot/auto-gc) ou a passada de UX/identidade visual no app inteiro (registrada em
 memória, não bloqueio) — a critério do usuário. Game Runner e login Microsoft seguem pausados/
 bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 10 (continuação) — 2026-09-02 — Identidade Visual & Design System (fundação + telas principais)
+
+Retomada direta ("bora continuar") logo após fechar a Fase 4; usuário escolheu via
+`AskUserQuestion` seguir com a passada de UX/identidade visual registrada como pendência desde a
+Sessão 9, em vez da Fase 2. Duas decisões confirmadas antes de codar: tom exato do vermelho
+(escolhido "vivo/Minecraft redstone" entre três direções com preview de hex) e fatiamento
+(fundação + Instances/Instance detail/Java primeiro, `WorldList`/`WorldHistory`/`WorldBranches`/
+stats/chunk map ficam pra uma fatia seguinte).
+
+`apps/desktop/src/App.css` reescrito do zero — paleta de tokens CSS (`#e11d2e` claro / `#ff4c57`
+escuro como vermelho primário, com hover/active, mais fundo/superfície/borda/texto/perigo/
+sucesso/aviso, claro por padrão + override em `prefers-color-scheme: dark`), tipografia,
+componentes base (botão/input/select/link/código) que todo o app herda automaticamente sem
+mudança de markup, e duas variantes semânticas de botão (`.btn-primary` sólido vermelho,
+`.btn-danger` contorno, não usado ainda — as ações destrutivas vivem em `WorldList`, fora do
+escopo). Aplicado nas três telas combinadas: `App.tsx` (nav com wordmark "mcgit" vermelho),
+`InstanceManagerScreen`/`InstanceList`/`CreateInstanceForm` (lista vira grade de cards, mais
+perto do mockup do `CONTEXT.md`, formulário de criação vira sua própria seção), `Instance
+DetailScreen` (só o chrome — cabeçalho, banners de erro/status — o que `WorldList` renderiza por
+dentro não foi tocado), `JavaManagerScreen`/`JavaInstallationList`/`JavaVersionPicker`/
+`AddManualJavaForm` (lista vira `.install-list`, três seções com `<h2>` próprios, "default" em
+verde). Zero Rust tocado; `npx tsc --noEmit` limpo.
+
+**Achado de metodologia durante a verificação ao vivo, não um bug do app**: a primeira leva de
+screenshots (captura de desktop inteiro) mostrava blocos vermelhos/verdes sólidos "vazando"
+através da janela, alinhados pixel a pixel com as linhas de diff do editor de código atrás dela
+— parecia transparência real. Recapturar com captura só da janela ativa (`spectacle -b -a`)
+mostrou o app perfeitamente opaco — confirmado como artefato de composição do desktop
+(KDE/Wayland via XWayland), não um bug de CSS. Verificado ao vivo pela GUI real
+(`GDK_BACKEND=x11`/`xdotool`, `npx tauri dev`) nas três telas: grade de cards em Instances,
+formulário de criação como seção própria, cabeçalho/banners em Instance detail (mundo listado
+herdando os estilos base de graça, sem nenhuma classe nova), lista de Java com seções e o botão
+"Install" preenchido de vermelho vivo quando uma versão é selecionada (anel de foco vermelho no
+dropdown também confirmado).
+
+Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System; tom exato do
+vermelho registrado em `GUIDELINES.md` §Identidade Visual (antes só o conceito "mcgit=vermelho"
+estava lá, sem hex).
+
+**Estado ao final da sessão**: fundação do design system + 3 telas principais aplicadas e
+verificadas. Pendente pra uma fatia seguinte: `WorldList`/`WorldHistory`/`WorldBranches`/painel
+de stats/mapa de chunks da Fase 4 (só herdam a base hoje), ícone do app, favicon. Fase 4 segue
+completa (fechada mais cedo nesta mesma sessão). Login MS/Game Runner seguem pausados/bloqueados
+por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não urgente.

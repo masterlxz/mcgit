@@ -95,7 +95,7 @@ export function JavaManagerScreen() {
   return (
     <section>
       <h1>Java</h1>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="banner banner-error">{error}</p>}
 
       <JavaInstallationList
         installations={installations}
@@ -106,14 +106,17 @@ export function JavaManagerScreen() {
         Scan for Java
       </button>
 
+      {progress && <InstallProgressBar progress={progress} />}
+
+      <hr className="section-divider" />
+      <h2>Install a Java version</h2>
       <JavaVersionPicker
         versions={installableVersions}
         onInstall={handleInstall}
         disabled={busy}
       />
 
-      {progress && <InstallProgressBar progress={progress} />}
-
+      <h2>Add manually</h2>
       <AddManualJavaForm onAdd={handleAddManual} />
     </section>
   );

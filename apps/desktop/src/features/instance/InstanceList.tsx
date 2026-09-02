@@ -1,17 +1,8 @@
 import { Link } from "react-router-dom";
-import type { CSSProperties } from "react";
 import type { Instance } from "../../api/instance";
 
 type Props = {
   instances: Instance[];
-};
-
-const cardStyle: CSSProperties = {
-  border: "1px solid #ccc",
-  borderRadius: 8,
-  padding: "0.75rem 1rem",
-  margin: "0.5rem 0",
-  textAlign: "left",
 };
 
 function PlayButton({ instance }: { instance: Instance }) {
@@ -26,9 +17,7 @@ function PlayButton({ instance }: { instance: Instance }) {
       <button disabled title="Available after Microsoft login">
         Play
       </button>
-      <p style={{ fontSize: "0.85em", color: "#666", margin: "0.25rem 0 0" }}>
-        Available after Microsoft login
-      </p>
+      <p className="card-hint">Available after Microsoft login</p>
     </>
   );
 }
@@ -39,13 +28,13 @@ export function InstanceList({ instances }: Props) {
   }
 
   return (
-    <ul style={{ listStyle: "none", padding: 0 }}>
+    <ul className="card-grid">
       {instances.map((instance) => (
-        <li key={instance.id} style={cardStyle}>
+        <li key={instance.id} className="card">
           <Link to={`/instances/${instance.id}`}>
-            <strong>{instance.name}</strong>
+            <h3>{instance.name}</h3>
           </Link>
-          <p style={{ margin: "0.25rem 0" }}>
+          <p className="card-meta">
             Minecraft {instance.mc_version} ({instance.loader})
           </p>
           <PlayButton instance={instance} />

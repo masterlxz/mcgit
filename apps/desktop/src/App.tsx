@@ -8,12 +8,12 @@ import "./App.css";
 function AdvancedModeToggle() {
   const { advancedMode, setAdvancedMode } = useAdvancedMode();
   return (
-    <label>
+    <label className="advanced-mode-toggle">
       <input
         type="checkbox"
         checked={advancedMode}
         onChange={(e) => setAdvancedMode(e.target.checked)}
-      />{" "}
+      />
       Advanced mode
     </label>
   );
@@ -24,9 +24,15 @@ function App() {
     <AdvancedModeProvider>
       <HashRouter>
         <main className="container">
-          <nav>
-            <Link to="/">Instances</Link> | <Link to="/java">Java</Link> |{" "}
-            <AdvancedModeToggle />
+          <nav className="app-nav">
+            <Link to="/" className="brand">
+              mcgit
+            </Link>
+            <div className="nav-links">
+              <Link to="/">Instances</Link>
+              <Link to="/java">Java</Link>
+              <AdvancedModeToggle />
+            </div>
           </nav>
           <Routes>
             <Route path="/" element={<InstanceManagerScreen />} />

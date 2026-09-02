@@ -457,12 +457,14 @@ export function InstanceDetailScreen() {
 
   return (
     <section>
-      <p>
-        <Link to="/">← Instances</Link>
-      </p>
-      <h1>{instance ? instance.name : `Instance ${instanceId}`}</h1>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      {status && <p>{status}</p>}
+      <Link to="/" className="back-link">
+        ← Instances
+      </Link>
+      <div className="page-header">
+        <h1>{instance ? instance.name : `Instance ${instanceId}`}</h1>
+      </div>
+      {error && <p className="banner banner-error">{error}</p>}
+      {status && <p className="banner banner-status">{status}</p>}
 
       <h2>Worlds</h2>
       <WorldList

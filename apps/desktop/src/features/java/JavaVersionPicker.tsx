@@ -14,7 +14,7 @@ export function JavaVersionPicker({ versions, onInstall, disabled }: Props) {
   }
 
   return (
-    <div>
+    <div className="inline-form">
       <select
         value={selected ?? ""}
         onChange={(e) => setSelected(Number(e.target.value))}
@@ -29,6 +29,7 @@ export function JavaVersionPicker({ versions, onInstall, disabled }: Props) {
         ))}
       </select>
       <button
+        className="btn-primary"
         disabled={disabled || selected === null}
         onClick={() => selected !== null && onInstall(selected)}
       >

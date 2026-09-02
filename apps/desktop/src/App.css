@@ -1,18 +1,49 @@
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
+/* mcgit design system — red identity (Sessão 11, 2026-09-02).
+   Tokens first (light default, dark override via prefers-color-scheme —
+   this app has no explicit theme switcher, so it follows the OS setting,
+   same approach the Vite/Tauri template already used before this pass),
+   then base element styles, then small reusable layout/component classes
+   used by the primary screens (Instances, Instance detail chrome, Java).
+   World history/branches/stats keep today's plain markup and inherit the
+   base element styles for free — their own bespoke pass is a later slice. */
 
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafb);
-}
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  --color-bg: #faf7f6;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f3eeed;
+  --color-border: #e4dad8;
+  --color-text: #201a1a;
+  --color-text-muted: #6b5f5d;
+
+  --color-primary: #e11d2e;
+  --color-primary-hover: #c81726;
+  --color-primary-active: #b01220;
+  --color-primary-contrast: #ffffff;
+
+  --color-danger: #c62828;
+  --color-danger-hover: #a82121;
+  --color-success: #2e7d32;
+  --color-warning: #f9a825;
+
+  --color-disabled-bg: #ece6e5;
+  --color-disabled-text: #a79c9a;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  font-family: Inter, "Segoe UI", Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
-  line-height: 24px;
+  line-height: 1.5;
   font-weight: 400;
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  color: var(--color-text);
+  background-color: var(--color-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -21,96 +52,383 @@
   -webkit-text-size-adjust: 100%;
 }
 
-.container {
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #1b1414;
+    --color-surface: #241a1a;
+    --color-surface-alt: #2c201f;
+    --color-border: #3d2c2b;
+    --color-text: #f3e9e8;
+    --color-text-muted: #c2afac;
+
+    --color-primary: #ff4c57;
+    --color-primary-hover: #ff6871;
+    --color-primary-active: #e11d2e;
+    --color-primary-contrast: #1b1414;
+
+    --color-danger: #ff6b6b;
+    --color-success: #6bcb77;
+    --color-warning: #ffd166;
+
+    --color-disabled-bg: #2c2020;
+    --color-disabled-text: #7a6e6c;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
   margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+.container {
+  margin: 0 auto;
+  max-width: 960px;
+  padding: var(--space-4) var(--space-6) var(--space-8);
 }
 
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0 0 var(--space-2);
 }
 
-.row {
-  display: flex;
-  justify-content: center;
+h1 {
+  font-size: 1.75rem;
+}
+
+h2 {
+  font-size: 1.25rem;
+  margin-top: var(--space-6);
+}
+
+h3 {
+  font-size: 1.05rem;
+}
+
+p {
+  margin: var(--space-2) 0;
 }
 
 a {
   font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+  color: var(--color-primary);
+  text-decoration: none;
 }
 
 a:hover {
-  color: #535bf2;
+  color: var(--color-primary-hover);
+  text-decoration: underline;
 }
 
-h1 {
-  text-align: center;
+code {
+  font-size: 0.9em;
+  background: var(--color-surface-alt);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+ul {
+  padding-left: 1.25rem;
 }
 
 input,
+select,
 button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
   font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+  font-size: 1em;
+}
+
+input,
+select {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  padding: 0.5em 0.7em;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+input::placeholder {
+  color: var(--color-text-muted);
 }
 
 button {
   cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  padding: 0.5em 1em;
+  font-weight: 500;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
 }
 
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
-input,
-button {
-  outline: none;
+button:active:not(:disabled) {
+  background-color: var(--color-surface-alt);
 }
 
-#greet-input {
-  margin-right: 5px;
+button:disabled {
+  cursor: default;
+  color: var(--color-disabled-text);
+  background-color: var(--color-disabled-bg);
+  border-color: var(--color-disabled-bg);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
+/* Primary action (the one thing a screen most wants you to do — Create
+   instance, Install, Save snapshot). Solid brand red, white text. */
+button.btn-primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
 
-  a:hover {
-    color: #24c8db;
-  }
+button.btn-primary:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-primary-contrast);
+}
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
+button.btn-primary:active:not(:disabled) {
+  background-color: var(--color-primary-active);
+  border-color: var(--color-primary-active);
+}
+
+button.btn-primary:disabled {
+  background-color: var(--color-disabled-bg);
+  border-color: var(--color-disabled-bg);
+}
+
+/* Destructive action (Disable versioning, Set-default removal, ...) —
+   outlined, not solid, so it never competes visually with the brand red
+   primary button; only turns solid on hover to still read as "careful". */
+button.btn-danger {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background-color: transparent;
+}
+
+button.btn-danger:hover:not(:disabled) {
+  background-color: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-primary-contrast);
+}
+
+/* Top navigation */
+.app-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-nav .brand {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
+}
+
+.app-nav .brand:hover {
+  color: var(--color-primary-hover);
+  text-decoration: none;
+}
+
+.app-nav .nav-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: 0.95rem;
+}
+
+.app-nav .nav-links a {
+  color: var(--color-text-muted);
+}
+
+.app-nav .nav-links a:hover,
+.app-nav .nav-links a.active {
+  color: var(--color-primary);
+}
+
+.advanced-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+/* Page chrome shared by the primary screens */
+.page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.back-link {
+  display: inline-block;
+  font-size: 0.9rem;
+  margin-bottom: var(--space-2);
+}
+
+.banner {
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-2) 0;
+  font-size: 0.95rem;
+}
+
+.banner-error {
+  color: var(--color-danger);
+  background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
+}
+
+.banner-status {
+  color: var(--color-text);
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+}
+
+/* Card grid — Instances list, Java installation list */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-4) 0;
+}
+
+.card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-surface);
+  padding: var(--space-4);
+  text-align: left;
+}
+
+.card h3 {
+  margin-bottom: var(--space-1);
+}
+
+.card .card-meta {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  margin: 0 0 var(--space-3);
+}
+
+.card .card-hint {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  margin: var(--space-2) 0 0;
+}
+
+.card button {
+  width: 100%;
+}
+
+/* Java installations read better as a plain list than a card grid — one
+   line per install, action on the right — so this gets its own class
+   instead of reusing .card-grid/.card. */
+.install-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-4) 0;
+}
+
+.install-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.install-list .install-info {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.install-list .install-default {
+  color: var(--color-success);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.inline-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin: var(--space-3) 0;
+}
+
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-6) 0;
+}
+
+/* Progress bars (Java install, instance install) */
+.progress-block {
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface-alt);
+}
+
+.progress-block p {
+  margin: 0 0 var(--space-2);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.progress-block progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: none;
+}
+
+.progress-block progress::-webkit-progress-bar {
+  background-color: var(--color-border);
+  border-radius: 999px;
+}
+
+.progress-block progress::-webkit-progress-value {
+  background-color: var(--color-primary);
+  border-radius: 999px;
+}
+
+.progress-block progress::-moz-progress-bar {
+  background-color: var(--color-primary);
+  border-radius: 999px;
 }

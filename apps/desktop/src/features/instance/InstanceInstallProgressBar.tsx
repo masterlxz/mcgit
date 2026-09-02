@@ -23,7 +23,7 @@ export function InstanceInstallProgressBar({ progress }: Props) {
     progress.files_total !== null ? ` (${progress.files_done ?? 0}/${progress.files_total} files)` : "";
 
   return (
-    <div>
+    <div className="progress-block">
       <p>
         {PHASE_LABELS[progress.phase]}
         {fileCount}
