@@ -1349,6 +1349,51 @@ telas principais (Instances, Instance detail, Java, World versioning completo �
 branches, stats, diff por chunk da Fase 4). Só falta ícone do app e favicon, registrados como
 pendência menor, não urgente.
 
+### Terceira continuação — Ícone do app e favicon (mesma sessão, 2026-09-02)
+
+Fecha a última pendência da passada de UX. Símbolo desenhado do zero (não gerado por IA de
+imagem — SVG escrito à mão): um "quadrado arredondado" (squircle, `rx=180` num canvas
+1024×1024) preenchido com o vermelho de marca (`#e11d2e`) contendo o glifo universal de
+"git branch" — três nós (círculos brancos) ligados por uma linha reta (o branch principal) e
+uma curva que sai dela até um terceiro nó (a branch derivada) — em vez de uma letra genérica
+("M" sozinho foi a primeira tentativa, descartada por não comunicar nada específico do
+produto). A escolha comunica as duas metades do nome "mcgit" (Minecraft + git) numa imagem só,
+e o desenho (nós + curvas grossas, sem detalhe fino) foi verificado de propósito em 32px e 16px
+pra confirmar que continua legível nesses tamanhos pequenos — onde a maioria dos ícones de app
+realmente aparece (barra de tarefas, alt-tab, favicon de aba).
+
+Fonte do desenho salva em `apps/desktop/src-tauri/icons/icon-source.svg` (não gerada
+automaticamente, é o arquivo de verdade pra qualquer ajuste futuro). Todo o resto do conjunto de
+ícones (`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.icns`, `icon.ico`, `icon.png`, os
+`Square*Logo.png`/`StoreLogo.png` do instalador Windows/Appx) foi gerado a partir dela com
+`npx tauri icon <fonte.png>` — comando oficial do Tauri CLI que já produz todos os formatos
+multi-resolução corretos (`.ico` com 6 tamanhos embutidos, `.icns` nativo do macOS) sem precisar
+compor cada arquivo à mão. O gerador também criou pastas `icons/android/`/`icons/ios/` por
+padrão — removidas, já que `CONTEXT.md` define mobile fora de escopo (`Cross-Platform
+Requirements` é só Linux/Windows/macOS desktop) e `tauri.conf.json` não referencia essas pastas.
+
+Favicon da build web (`apps/desktop/public/favicon.svg`, referenciado em `index.html`) usa o
+mesmo SVG — SVG como favicon é suportado por todo navegador/WebView moderno e escala sem
+serrilhado em qualquer tamanho de aba, ao contrário de gerar um `.ico` separado só pra isso.
+`<title>` do `index.html` também trocado de "Tauri + React + Typescript" (sobra do scaffold,
+nunca corrigido) pra "mcgit" — a janela do app já tinha o título certo via `tauri.conf.json`
+desde o início, só a aba do dev server (Vite) é que ainda mostrava o nome genérico. Assets não
+usados do scaffold padrão (`public/vite.svg`, `public/tauri.svg`, `src/assets/react.svg` — nenhum
+importado em lugar nenhum, confirmado por busca antes de apagar) removidos junto.
+
+**Verificado**: `cargo build --workspace` aceita os novos `icon.ico`/`icon.icns` sem erro;
+`file` confirma os dois como formatos válidos (`.ico` com ícones de 32×32 e 16×16 reais dentro,
+`.icns` tipo `ic10`); `npx tsc --noEmit` limpo. Ao vivo pela GUI real (`GDK_BACKEND=x11`, `npx
+tauri dev`): `xprop -id <window> _NET_WM_ICON` confirma que a janela carrega um ícone de verdade
+(dados de pixel reais, não o ícone padrão do Tauri/engrenagem) — o painel do KDE usado nesta
+sessão não tinha applet de lista de janelas visível na área capturada pra confirmar visualmente
+o ícone na barra de tarefas, mas a propriedade X11 correta estar populada já confirma que o
+pipeline de geração e o `tauri.conf.json` (`bundle.icon`) estão certos; qualquer ambiente com
+lista de janelas visível mostraria o ícone normalmente.
+
+Fecha a pendência: a passada de UX está 100% completa (fundação + todas as telas + identidade
+de ícone/favicon).
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

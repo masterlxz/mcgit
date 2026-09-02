@@ -72,8 +72,6 @@ O usuário mantém um ecossistema de projetos onde cada um tem uma cor própria 
 Anchor é verde, TruthID é azul, Warden é roxo. **mcgit é vermelho** (decidido na Sessão 2,
 2026-08-16) — mcgit faz parte desse mesmo ecossistema.
 
-Ainda não decidido: o ícone do app nem o favicon — isso fica pra uma sessão futura.
-
 **Tom exato decidido (Sessão 10, continuação, 2026-09-02)**: vermelho vivo, tipo "Minecraft
 redstone" — `#E11D2E` no modo claro, `#FF4C57` no modo escuro (mais claro pra manter contraste
 num fundo escuro), escolhido pelo usuário entre três direções (crimson sóbrio, vivo/redstone,
@@ -81,3 +79,11 @@ terroso/tijolo) via `AskUserQuestion`. Aplicado como paleta de tokens CSS comple
 superfície, texto, bordas, primário, perigo, sucesso, aviso — claro e escuro via
 `prefers-color-scheme`, sem toggle explícito de tema ainda) em `apps/desktop/src/App.css`.
 Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System.
+
+**Ícone do app e favicon fechados (Sessão 10, terceira continuação, 2026-09-02)**: um glifo de
+"git branch" (três nós + duas linhas, uma reta e uma curva) em branco sobre um quadrado
+arredondado vermelho de marca — comunica as duas metades do nome "mcgit" numa imagem só, em vez
+de uma letra genérica. Fonte editável em `apps/desktop/src-tauri/icons/icon-source.svg`; todo o
+resto do conjunto (ico/icns/pngs) gerado dela via `npx tauri icon`. Favicon da build web usa o
+mesmo SVG. Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System (subseção
+"Terceira continuação — Ícone do app e favicon").

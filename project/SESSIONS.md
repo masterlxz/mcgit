@@ -1311,3 +1311,42 @@ app (Instances, Instance detail, Java, World versioning completo). Só falta íc
 favicon — pendência menor, não urgente. Fase 4 segue completa (fechada mais cedo na mesma
 sessão). Login MS/Game Runner seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo
 do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 10 (terceira continuação) — 2026-09-02 — Identidade Visual: ícone do app e favicon
+
+Retomada direta ("por onde continuamos?"), usuário escolheu via `AskUserQuestion` fechar a
+última ponta solta da passada de UX (ícone/favicon) em vez de virar pra Fase 2 ou reabrir o
+login Microsoft.
+
+Desenhado um SVG à mão (não gerado por IA de imagem): quadrado arredondado no vermelho de marca
+com o glifo universal de "git branch" (três nós + linha reta + curva) em branco — escolhido
+sobre uma primeira tentativa com a letra "M" solta, descartada por não comunicar nada específico
+do produto. Verificado visualmente em 32px e 16px antes de aplicar, pra confirmar legibilidade
+nos tamanhos onde ícone de app realmente aparece (barra de tarefas, alt-tab, aba do navegador).
+
+Fonte salva em `apps/desktop/src-tauri/icons/icon-source.svg`; resto do conjunto (ico/icns/pngs/
+Square*Logo do instalador Windows) gerado com `npx tauri icon` — comando oficial do Tauri CLI,
+não composição manual de cada arquivo. Pastas `icons/android/`/`icons/ios/` que o gerador criou
+por padrão foram removidas (mobile fora de escopo, ver `CONTEXT.md` §Cross-Platform
+Requirements). Favicon da build web (`public/favicon.svg`) usa o mesmo SVG; `<title>` do
+`index.html` corrigido de "Tauri + React + Typescript" (sobra do scaffold nunca tocada) pra
+"mcgit". Assets do template padrão sem nenhum uso (`vite.svg`, `tauri.svg`, `react.svg`)
+removidos junto, confirmado por busca antes de apagar.
+
+`cargo build --workspace` aceita os novos arquivos de ícone sem erro; `file` confirma os
+formatos `.ico`/`.icns` como válidos; `npx tsc --noEmit` limpo. Verificado ao vivo
+(`GDK_BACKEND=x11`, `npx tauri dev`): `xprop _NET_WM_ICON` na janela confirma dados de pixel
+reais carregados (não o ícone padrão do Tauri) — o painel do KDE desta sessão não tinha lista de
+janelas visível na área capturada pra conferir visualmente na barra de tarefas, mas a
+propriedade X11 correta já confirma que o pipeline e o `tauri.conf.json` estão certos.
+
+Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System (subseção "Terceira
+continuação"); tom/descrição do ícone registrados em `GUIDELINES.md` §Identidade Visual.
+
+**Estado ao final da sessão**: a passada de UX está 100% completa — fundação, todas as telas, e
+agora ícone/favicon. Fase 4 segue completa (fechada mais cedo na mesma sessão). Próxima frente
+em aberto: Fase 2 (auto-snapshot/auto-gc) ou reabrir Game Runner/login Microsoft, a critério do
+usuário. Login MS/Game Runner seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo
+do CurseForge segue em aberto, não urgente.
