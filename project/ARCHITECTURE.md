@@ -1394,6 +1394,63 @@ lista de janelas visível mostraria o ícone normalmente.
 Fecha a pendência: a passada de UX está 100% completa (fundação + todas as telas + identidade
 de ícone/favicon).
 
+### Correção: "preto com detalhes marcantes em vermelho", não "tudo avermelhado" (mesma sessão, 2026-09-02)
+
+O usuário corrigiu a direção logo depois do commit do ícone: *"eu não queria que fosse
+avermelhado tudo, eu queria que fosse preto com detalhes marcantes em vermelho"*. Diagnóstico
+correto — as três fatias anteriores tinham dois problemas reais, não um só ajuste de gosto:
+
+1. **`a { color: var(--color-primary) }` como regra base** deixava todo link vermelho por
+   padrão — nome de instância (`InstanceList` envolve o card num `<Link>`), o link "← Instances",
+   e qualquer outro texto clicável, sem exceção. Um único ponto de marca (a wordmark "mcgit" no
+   nav) deveria ser vermelho; o resto virou vermelho de graça, sem intenção.
+2. **`button:hover:not(:disabled) { border-color: primary; color: primary }` como regra base**
+   deixava literalmente qualquer botão da tela — inclusive os neutros, tipo "Show history"/
+   "Switch"/"Cancel" — vermelho ao passar o mouse. Isso multiplicava a sensação de "app
+   vermelho" muito além dos botões que realmente deveriam chamar atenção (`.btn-primary`/
+   `.btn-danger`).
+3. **Os tokens neutros (fundo/superfície/borda) tinham um matiz avermelhado escondido**
+   (`#1b1414`/`#241a1a`/`#3d2c2b` no escuro, `#faf7f6`/`#e4dad8` no claro) em vez de preto/cinza
+   de verdade — um detalhe sutil, mas que reforçava a sensação de "tudo tem um pouco de
+   vermelho" mesmo onde não devia ter vermelho nenhum.
+
+**Correção em `App.css`**: tokens neutros trocados por preto/branco/cinza verdadeiros, sem matiz
+(`#121212`/`#1c1c1c`/`#242424`/`#363636` no escuro; `#fafafa`/`#dcdcdc` no claro — `--color-text`/
+`--color-danger`/`--color-success`/`--color-warning` sem mudança, já eram neutros/semânticos
+corretos). `a` volta a ser texto preto/branco sublinhado (o sublinhado, não a cor, é o que diz
+"isso é clicável"); `button:hover` neutro vira `border-color: text-muted` + fundo
+`surface-alt`, sem tocar em vermelho. `--color-primary` continua reservado só pro que já era
+correto: `.btn-primary` (sólido), `.btn-danger` (contornado), o anel de foco de input (glow
+sutil, um campo por vez), a wordmark "mcgit" no nav, e a barra de progresso (indicador ativo,
+fino). Achado um bug residual ao verificar ao vivo: `.app-nav .brand` só removia o sublinhado no
+`:hover`, deixando a wordmark sublinhada de vermelho em repouso — corrigido movendo
+`text-decoration: none` pro estado base.
+
+**Ícone do app também invertido** pra seguir o mesmo princípio: fundo passa de vermelho sólido
+pra preto quase puro (`#121212`, o mesmo tom do `--color-bg` escuro), e o glifo de git-branch
+(que era branco sobre vermelho) vira vermelho sobre preto — o "detalhe marcante", não o fundo
+inteiro. Fonte atualizada em `icon-source.svg`, conjunto completo regenerado via `npx tauri
+icon`, favicon da build web trocado junto. Verificado legível em 32px com o novo esquema.
+
+**Verificado ao vivo pela GUI real** (tela do usuário ficou ativa no meio da verificação —
+sessão de xadrez no navegador, mesma classe de interrupção já registrada na Sessão 8; a
+verificação foi interrompida nesse ponto por respeito ao uso ativo da tela, sem insistir em
+clicar por cima): tela de Instances confirmada com fundo preto de verdade, nome da instância em
+texto neutro (não mais vermelho), wordmark "mcgit" como o único ponto de vermelho visível,
+sem sublinhado em repouso. `npx tsc --noEmit` limpo. Como a correção foi feita inteiramente nos
+tokens/estilos base (não em classes por componente), ela se propaga automaticamente pra todas as
+telas já construídas nas fatias anteriores (Instances, Instance detail, Java, World versioning)
+sem precisar reabrir nenhum componente — não foi possível re-clicar em cada tela pra confirmar
+individualmente por causa da interrupção acima, mas nenhuma delas tem override próprio de cor
+que escaparia da correção (conferido por busca: os únicos usos restantes de `--color-primary`
+em `App.css` são exatamente os cinco listados acima).
+
+**Lição pra guiar decisões de design futuras neste projeto**: "cor de marca" não significa
+"pintar os elementos interativos todos dessa cor" — significa reservá-la pros poucos pontos que
+devem chamar atenção de propósito (ação principal, perigo, logo), com o resto da interface
+deliberadamente neutro. Vale re-auditar contra esse princípio antes de aplicar a cor de marca em
+qualquer tela/elemento novo.
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

@@ -4,14 +4,14 @@
       <rect width="1024" height="1024" rx="180"/>
     </clipPath>
   </defs>
-  <rect width="1024" height="1024" rx="180" fill="#e11d2e"/>
+  <rect width="1024" height="1024" rx="180" fill="#121212"/>
   <g clip-path="url(#squircle)">
     <g transform="translate(512,512) scale(6.2) translate(-50,-50)"
-       fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round">
+       fill="none" stroke="#e11d2e" stroke-width="10" stroke-linecap="round">
       <line x1="30" y1="18" x2="30" y2="82"/>
       <path d="M30,50 C52,50 52,60 76,60"/>
     </g>
-    <g transform="translate(512,512) scale(6.2) translate(-50,-50)" fill="#ffffff">
+    <g transform="translate(512,512) scale(6.2) translate(-50,-50)" fill="#e11d2e">
       <circle cx="30" cy="18" r="10"/>
       <circle cx="30" cy="82" r="10"/>
       <circle cx="76" cy="60" r="10"/>

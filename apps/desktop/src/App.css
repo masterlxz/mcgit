@@ -1,19 +1,26 @@
-/* mcgit design system — red identity (Sessão 10, 2026-09-02; World screens
-   added in a second continuation the same day).
+/* mcgit design system — black base, red as a marking accent (not a wash).
+   Corrected (Sessão 11, 2026-09-02) after the first pass over-applied red
+   as the default color for links and hover states, which read as "the
+   whole app is red" instead of "black with striking red details" — the
+   actual brief. Neutrals are now true black/white/gray (no red undertone);
+   --color-primary is reserved for primary buttons, the brand wordmark, and
+   focus/active accents — never the default text/link/hover color. See
+   `ARCHITECTURE.md` §Identidade Visual & Design System for the full note.
+
    Tokens first (light default, dark override via prefers-color-scheme —
    this app has no explicit theme switcher, so it follows the OS setting,
    same approach the Vite/Tauri template already used before this pass),
    then base element styles, then small reusable layout/component classes —
-   first pass covered Instances/Instance detail chrome/Java; this pass adds
-   World history/branches/stats/the Fase 4 chunk map. */
+   first pass covered Instances/Instance detail chrome/Java; second pass
+   added World history/branches/stats/the Fase 4 chunk map. */
 
 :root {
-  --color-bg: #faf7f6;
+  --color-bg: #fafafa;
   --color-surface: #ffffff;
-  --color-surface-alt: #f3eeed;
-  --color-border: #e4dad8;
-  --color-text: #201a1a;
-  --color-text-muted: #6b5f5d;
+  --color-surface-alt: #f0f0f0;
+  --color-border: #dcdcdc;
+  --color-text: #1a1a1a;
+  --color-text-muted: #6b6b6b;
 
   --color-primary: #e11d2e;
   --color-primary-hover: #c81726;
@@ -25,8 +32,8 @@
   --color-success: #2e7d32;
   --color-warning: #f9a825;
 
-  --color-disabled-bg: #ece6e5;
-  --color-disabled-text: #a79c9a;
+  --color-disabled-bg: #ececec;
+  --color-disabled-text: #a0a0a0;
 
   --radius: 10px;
   --radius-sm: 6px;
@@ -54,24 +61,24 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #1b1414;
-    --color-surface: #241a1a;
-    --color-surface-alt: #2c201f;
-    --color-border: #3d2c2b;
-    --color-text: #f3e9e8;
-    --color-text-muted: #c2afac;
+    --color-bg: #121212;
+    --color-surface: #1c1c1c;
+    --color-surface-alt: #242424;
+    --color-border: #363636;
+    --color-text: #f2f2f2;
+    --color-text-muted: #a3a3a3;
 
     --color-primary: #ff4c57;
     --color-primary-hover: #ff6871;
     --color-primary-active: #e11d2e;
-    --color-primary-contrast: #1b1414;
+    --color-primary-contrast: #121212;
 
     --color-danger: #ff6b6b;
     --color-success: #6bcb77;
     --color-warning: #ffd166;
 
-    --color-disabled-bg: #2c2020;
-    --color-disabled-text: #7a6e6c;
+    --color-disabled-bg: #2a2a2a;
+    --color-disabled-text: #6b6b6b;
   }
 }
 
@@ -114,15 +121,19 @@ p {
   margin: var(--space-2) 0;
 }
 
+/* Links are black/white text, not red — red is reserved for buttons and
+   the brand mark (see the file header note). Underline is the affordance
+   that says "this is clickable," not color. */
 a {
   font-weight: 500;
-  color: var(--color-primary);
-  text-decoration: none;
+  color: var(--color-text);
+  text-decoration: underline;
+  text-decoration-color: var(--color-border);
+  text-underline-offset: 2px;
 }
 
 a:hover {
-  color: var(--color-primary-hover);
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 
 code {
@@ -175,9 +186,11 @@ button {
   transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
 }
 
+/* Neutral hover — red stays reserved for .btn-primary/.btn-danger, not
+   every button on the page. */
 button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--color-text-muted);
+  background-color: var(--color-surface-alt);
 }
 
 button:active:not(:disabled) {
@@ -246,11 +259,11 @@ button.btn-danger:hover:not(:disabled) {
   font-weight: 700;
   color: var(--color-primary);
   letter-spacing: -0.02em;
+  text-decoration: none;
 }
 
 .app-nav .brand:hover {
   color: var(--color-primary-hover);
-  text-decoration: none;
 }
 
 .app-nav .nav-links {
@@ -262,11 +275,12 @@ button.btn-danger:hover:not(:disabled) {
 
 .app-nav .nav-links a {
   color: var(--color-text-muted);
+  text-decoration: none;
 }
 
 .app-nav .nav-links a:hover,
 .app-nav .nav-links a.active {
-  color: var(--color-primary);
+  color: var(--color-text);
 }
 
 .advanced-mode-toggle {
@@ -327,6 +341,10 @@ button.btn-danger:hover:not(:disabled) {
   background-color: var(--color-surface);
   padding: var(--space-4);
   text-align: left;
+}
+
+.card > a {
+  text-decoration: none;
 }
 
 .card h3 {

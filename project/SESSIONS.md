@@ -1350,3 +1350,37 @@ agora ícone/favicon. Fase 4 segue completa (fechada mais cedo na mesma sessão)
 em aberto: Fase 2 (auto-snapshot/auto-gc) ou reabrir Game Runner/login Microsoft, a critério do
 usuário. Login MS/Game Runner seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo
 do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 10 (quarta continuação) — 2026-09-02 — Correção de identidade visual: preto, não vermelho
+
+Usuário corrigiu a direção logo após o commit do ícone: *"eu não queria que fosse avermelhado
+tudo, eu queria que fosse preto com detalhes marcantes em vermelho"*. Diagnóstico: duas regras
+base em `App.css` deixavam vermelho o padrão em vez da exceção — `a { color: primary }` (todo
+link, inclusive nome de instância e "← Instances") e `button:hover { color: primary }` (todo
+botão ao passar o mouse, não só os que deveriam chamar atenção). Os tokens neutros também
+tinham um matiz avermelhado escondido em vez de preto/cinza de verdade.
+
+Corrigido: tokens neutros viram preto/branco/cinza sem matiz; links voltam a ser texto neutro
+sublinhado (sublinhado, não cor, indica clicável); hover neutro de botão vira borda/fundo
+cinza, sem vermelho. `--color-primary` fica reservado só pro que já fazia sentido: botão
+primário, botão de perigo, anel de foco, wordmark do nav, barra de progresso — cinco usos, não
+"tudo". Bug residual achado ao vivo: a wordmark só perdia o sublinhado no hover, ficava
+sublinhada de vermelho em repouso — corrigido. Ícone do app também invertido (fundo preto,
+glifo vermelho, era o oposto) pelo mesmo princípio, conjunto regenerado via `tauri icon`.
+
+Verificação ao vivo interrompida no meio (tela do usuário ficou ativa com outra janela — mesma
+classe de interrupção da Sessão 8, respeitada sem insistir em clicar por cima), mas a tela de
+Instances já confirmada com fundo preto de verdade e nome de instância neutro antes da
+interrupção; a correção foi feita só em tokens/estilos base (não por componente), então se
+propaga automaticamente pras telas já construídas sem precisar reabrir nenhuma — confirmado por
+busca que não sobra nenhum uso de `--color-primary` fora dos cinco pontos intencionais.
+
+Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System (subseção
+"Correção: preto com detalhes marcantes em vermelho"). Registrada como memória de feedback
+(`feedback_visual_identity_black_base`) pra guiar decisões de design futuras neste projeto.
+
+**Estado ao final da sessão**: identidade visual corrigida e alinhada com o que o usuário
+queria. Próxima frente em aberto: Fase 2 (auto-snapshot/auto-gc) ou reabrir Game Runner/login
+Microsoft, a critério do usuário.
