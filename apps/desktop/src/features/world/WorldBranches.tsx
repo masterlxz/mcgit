@@ -1,5 +1,13 @@
 import { useState } from "react";
-import type { BlockDiff, Branch, ChunkDiff, ConflictedFile, FileChange } from "../../api/world";
+import type {
+  BlockDiff,
+  Branch,
+  ChunkDiff,
+  ConflictedFile,
+  EntityDiff,
+  FileChange,
+  StructureDiff,
+} from "../../api/world";
 import { RegionChunkMap } from "./RegionChunkMap";
 
 const MAX_BLOCK_DIFFS_SHOWN = 50;
@@ -15,12 +23,20 @@ type Props = {
   chunkBlockDiff:
     | { otherBranch: string; path: string; chunkX: number; chunkZ: number; blocks: BlockDiff[] }
     | undefined;
+  chunkStructureDiff:
+    | { otherBranch: string; path: string; chunkX: number; chunkZ: number; structures: StructureDiff[] }
+    | undefined;
+  chunkEntityDiff:
+    | { otherBranch: string; path: string; chunkX: number; chunkZ: number; entities: EntityDiff[] }
+    | undefined;
   mergeState: MergeState | undefined;
   onCreate: (name: string) => void;
   onSwitch: (name: string) => void;
   onCompare: (name: string) => void;
   onShowRegionChunks: (otherBranch: string, path: string) => void;
   onShowChunkBlocks: (otherBranch: string, path: string, chunkX: number, chunkZ: number) => void;
+  onShowChunkStructures: (otherBranch: string, path: string, chunkX: number, chunkZ: number) => void;
+  onShowChunkEntities: (otherBranch: string, path: string, chunkX: number, chunkZ: number) => void;
   onPreviewMerge: (name: string) => void;
   onCancelMergePreview: () => void;
   onMerge: (name: string) => void;
@@ -29,8 +45,16 @@ type Props = {
   onAbortMerge: () => void;
 };
 
-function isRegionFile(path: string): boolean {
-  return path.startsWith("region/") && path.endsWith(".mca");
+/// Whether `path` is one of the two chunk-diffable shapes, and which: a
+/// `region/` file (blocks + structures live in its chunks) or an
+/// `entities/` file (mobs, dropped items — a different chunk NBT root).
+/// Covers all three dimension folders — Overworld (`region/...`), Nether
+/// (`DIM-1/region/...`), End (`DIM1/region/...`) — since the block-diff
+/// pipeline itself only cares about the filename, not which folder it's in.
+function regionFileKind(path: string): "blocks" | "entities" | null {
+  const match = path.match(/^(?:DIM-1\/|DIM1\/)?(region|entities)\/.*\.mca$/);
+  if (!match) return null;
+  return match[1] === "region" ? "blocks" : "entities";
 }
 
 /// Pulls `(region_x, region_z)` out of a region file's path (e.g.
@@ -46,6 +70,14 @@ function parseRegionCoords(path: string): [number, number] | null {
 
 function describeBlockDiff(block: BlockDiff): string {
   return `(${block.x}, ${block.y}, ${block.z}): ${block.from} → ${block.to}`;
+}
+
+function describeStructureDiff(structure: StructureDiff): string {
+  return `${structure.presence} — ${structure.id}`;
+}
+
+function describeEntityDiff(entity: EntityDiff): string {
+  return `${entity.presence} — ${entity.id}`;
 }
 
 function formatSize(bytes: number | null): string {
@@ -81,12 +113,16 @@ export function WorldBranches({
   diff,
   regionChunkDiff,
   chunkBlockDiff,
+  chunkStructureDiff,
+  chunkEntityDiff,
   mergeState,
   onCreate,
   onSwitch,
   onCompare,
   onShowRegionChunks,
   onShowChunkBlocks,
+  onShowChunkStructures,
+  onShowChunkEntities,
   onPreviewMerge,
   onCancelMergePreview,
   onMerge,
@@ -98,7 +134,7 @@ export function WorldBranches({
   const [confirmingSwitchFor, setConfirmingSwitchFor] = useState<string | null>(null);
   const [openDiffFor, setOpenDiffFor] = useState<string | null>(null);
   const [openChunksFor, setOpenChunksFor] = useState<string | null>(null);
-  const [openBlocksFor, setOpenBlocksFor] = useState<string | null>(null);
+  const [openChunkDetailFor, setOpenChunkDetailFor] = useState<string | null>(null);
 
   function toggleDiff(name: string) {
     if (openDiffFor === name) {
@@ -118,13 +154,28 @@ export function WorldBranches({
     }
   }
 
-  function toggleBlocks(otherBranch: string, path: string, chunkX: number, chunkZ: number) {
+  /// Opens/closes the per-chunk detail panel. Which data gets fetched
+  /// depends on the file's shape: a `region/` chunk holds both blocks and
+  /// structures, an `entities/` chunk holds only entities (see
+  /// `regionFileKind`).
+  function toggleChunkDetail(
+    otherBranch: string,
+    path: string,
+    chunkX: number,
+    chunkZ: number,
+    kind: "blocks" | "entities",
+  ) {
     const key = `${chunkX},${chunkZ}`;
-    if (openBlocksFor === key) {
-      setOpenBlocksFor(null);
+    if (openChunkDetailFor === key) {
+      setOpenChunkDetailFor(null);
     } else {
-      setOpenBlocksFor(key);
-      onShowChunkBlocks(otherBranch, path, chunkX, chunkZ);
+      setOpenChunkDetailFor(key);
+      if (kind === "blocks") {
+        onShowChunkBlocks(otherBranch, path, chunkX, chunkZ);
+        onShowChunkStructures(otherBranch, path, chunkX, chunkZ);
+      } else {
+        onShowChunkEntities(otherBranch, path, chunkX, chunkZ);
+      }
     }
   }
 
@@ -188,15 +239,16 @@ export function WorldBranches({
                 {diff &&
                   diff.otherBranch === branch.name &&
                   diff.changes.map((change) => {
-                    const regionCoords = isRegionFile(change.path) ? parseRegionCoords(change.path) : null;
+                    const regionKind = change.status === "modified" ? regionFileKind(change.path) : null;
+                    const regionCoords = regionKind ? parseRegionCoords(change.path) : null;
                     const thisRegionChunkDiff =
                       regionChunkDiff &&
                       regionChunkDiff.otherBranch === branch.name &&
                       regionChunkDiff.path === change.path
                         ? regionChunkDiff
                         : undefined;
-                    const openChunkX = openBlocksFor ? Number(openBlocksFor.split(",")[0]) : null;
-                    const openChunkZ = openBlocksFor ? Number(openBlocksFor.split(",")[1]) : null;
+                    const openChunkX = openChunkDetailFor ? Number(openChunkDetailFor.split(",")[0]) : null;
+                    const openChunkZ = openChunkDetailFor ? Number(openChunkDetailFor.split(",")[1]) : null;
                     const thisChunkBlockDiff =
                       chunkBlockDiff &&
                       chunkBlockDiff.otherBranch === branch.name &&
@@ -205,11 +257,27 @@ export function WorldBranches({
                       chunkBlockDiff.chunkZ === openChunkZ
                         ? chunkBlockDiff
                         : undefined;
+                    const thisChunkStructureDiff =
+                      chunkStructureDiff &&
+                      chunkStructureDiff.otherBranch === branch.name &&
+                      chunkStructureDiff.path === change.path &&
+                      chunkStructureDiff.chunkX === openChunkX &&
+                      chunkStructureDiff.chunkZ === openChunkZ
+                        ? chunkStructureDiff
+                        : undefined;
+                    const thisChunkEntityDiff =
+                      chunkEntityDiff &&
+                      chunkEntityDiff.otherBranch === branch.name &&
+                      chunkEntityDiff.path === change.path &&
+                      chunkEntityDiff.chunkX === openChunkX &&
+                      chunkEntityDiff.chunkZ === openChunkZ
+                        ? chunkEntityDiff
+                        : undefined;
 
                     return (
                       <li key={change.path}>
                         {change.status} — {change.path} — {describeChange(change)}
-                        {change.status === "modified" && regionCoords && (
+                        {regionKind && regionCoords && (
                           <>
                             {" "}
                             <button onClick={() => toggleChunks(branch.name, change.path)}>
@@ -226,44 +294,81 @@ export function WorldBranches({
                                     chunks={thisRegionChunkDiff.chunks}
                                     regionX={regionCoords[0]}
                                     regionZ={regionCoords[1]}
-                                    openChunkKey={openBlocksFor}
+                                    openChunkKey={openChunkDetailFor}
+                                    detailLabel={regionKind === "blocks" ? "blocks and structures" : "entities"}
                                     onToggleChunk={(chunkX, chunkZ) =>
-                                      toggleBlocks(branch.name, change.path, chunkX, chunkZ)
+                                      toggleChunkDetail(branch.name, change.path, chunkX, chunkZ, regionKind)
                                     }
                                   />
                                 )}
-                                {openBlocksFor && openChunkX !== null && openChunkZ !== null && (
+                                {openChunkDetailFor && openChunkX !== null && openChunkZ !== null && (
                                   <div>
-                                    <p>
-                                      Blocks changed in chunk ({openChunkX}, {openChunkZ}):
-                                    </p>
-                                    <ul>
-                                      {thisChunkBlockDiff && thisChunkBlockDiff.blocks.length === 0 && (
-                                        <li>
-                                          <em>
-                                            No blocks differ in shared sections (the change is in
-                                            a section only one side has).
-                                          </em>
-                                        </li>
-                                      )}
-                                      {thisChunkBlockDiff &&
-                                        thisChunkBlockDiff.blocks
-                                          .slice(0, MAX_BLOCK_DIFFS_SHOWN)
-                                          .map((block) => (
-                                            <li key={`${block.x},${block.y},${block.z}`}>
-                                              {describeBlockDiff(block)}
+                                    {regionKind === "blocks" && (
+                                      <>
+                                        <p>
+                                          Blocks changed in chunk ({openChunkX}, {openChunkZ}):
+                                        </p>
+                                        <ul>
+                                          {thisChunkBlockDiff && thisChunkBlockDiff.blocks.length === 0 && (
+                                            <li>
+                                              <em>
+                                                No blocks differ in shared sections (the change is in
+                                                a section only one side has).
+                                              </em>
                                             </li>
-                                          ))}
-                                      {thisChunkBlockDiff &&
-                                        thisChunkBlockDiff.blocks.length > MAX_BLOCK_DIFFS_SHOWN && (
-                                          <li>
-                                            <em>
-                                              ...and{" "}
-                                              {thisChunkBlockDiff.blocks.length - MAX_BLOCK_DIFFS_SHOWN} more.
-                                            </em>
-                                          </li>
-                                        )}
-                                    </ul>
+                                          )}
+                                          {thisChunkBlockDiff &&
+                                            thisChunkBlockDiff.blocks
+                                              .slice(0, MAX_BLOCK_DIFFS_SHOWN)
+                                              .map((block) => (
+                                                <li key={`${block.x},${block.y},${block.z}`}>
+                                                  {describeBlockDiff(block)}
+                                                </li>
+                                              ))}
+                                          {thisChunkBlockDiff &&
+                                            thisChunkBlockDiff.blocks.length > MAX_BLOCK_DIFFS_SHOWN && (
+                                              <li>
+                                                <em>
+                                                  ...and{" "}
+                                                  {thisChunkBlockDiff.blocks.length - MAX_BLOCK_DIFFS_SHOWN} more.
+                                                </em>
+                                              </li>
+                                            )}
+                                        </ul>
+                                        <p>
+                                          Structures changed in chunk ({openChunkX}, {openChunkZ}):
+                                        </p>
+                                        <ul>
+                                          {thisChunkStructureDiff && thisChunkStructureDiff.structures.length === 0 && (
+                                            <li>
+                                              <em>No structures differ.</em>
+                                            </li>
+                                          )}
+                                          {thisChunkStructureDiff &&
+                                            thisChunkStructureDiff.structures.map((structure) => (
+                                              <li key={structure.id}>{describeStructureDiff(structure)}</li>
+                                            ))}
+                                        </ul>
+                                      </>
+                                    )}
+                                    {regionKind === "entities" && (
+                                      <>
+                                        <p>
+                                          Entities changed in chunk ({openChunkX}, {openChunkZ}):
+                                        </p>
+                                        <ul>
+                                          {thisChunkEntityDiff && thisChunkEntityDiff.entities.length === 0 && (
+                                            <li>
+                                              <em>No entities differ.</em>
+                                            </li>
+                                          )}
+                                          {thisChunkEntityDiff &&
+                                            thisChunkEntityDiff.entities.map((entity) => (
+                                              <li key={entity.uuid}>{describeEntityDiff(entity)}</li>
+                                            ))}
+                                        </ul>
+                                      </>
+                                    )}
                                   </div>
                                 )}
                               </>

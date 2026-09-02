@@ -20,6 +20,10 @@ type Props = {
   regionX: number;
   regionZ: number;
   openChunkKey: string | null;
+  /// What clicking a changed cell reveals — `"region/"` files show blocks
+  /// and structures, `"entities/"` files show entities (see
+  /// `regionFileKind` in `WorldBranches.tsx`). Only changes the caption.
+  detailLabel: string;
   onToggleChunk: (chunkX: number, chunkZ: number) => void;
 };
 
@@ -28,7 +32,7 @@ type Props = {
 /// the differing chunks `diff_region_chunks` reports get a color; every
 /// other slot (unchanged, or never generated on either side — the two are
 /// indistinguishable from this data alone) renders as an empty cell.
-export function RegionChunkMap({ chunks, regionX, regionZ, openChunkKey, onToggleChunk }: Props) {
+export function RegionChunkMap({ chunks, regionX, regionZ, openChunkKey, detailLabel, onToggleChunk }: Props) {
   const byLocalCoord = new Map<string, ChunkDiff>();
   for (const chunk of chunks) {
     const localX = chunk.chunk_x - regionX * 32;
@@ -91,7 +95,7 @@ export function RegionChunkMap({ chunks, regionX, regionZ, openChunkKey, onToggl
             {STATUS_LABEL[status]}
           </span>
         ))}
-        <em>Click a changed chunk to see its blocks.</em>
+        <em>Click a changed chunk to see its {detailLabel}.</em>
       </p>
     </div>
   );

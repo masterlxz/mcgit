@@ -1100,6 +1100,94 @@ de lista.
   (não há testes automatizados de componente React no projeto ainda — verificação é só via
   typecheck + GUI real, mesmo padrão de todas as fatias de UI anteriores).
 
+### Diff por chunk — fechando a lacuna de entidades/estruturas/Nether-End (Sessão 10, 2026-09-02)
+
+A primeira fatia do diff por chunk (Sessão 8) só cobria blocos, e só dentro de `region/` — o
+Nether (`DIM-1/region/`), o End (`DIM1/region/`) e as entidades (`entities/`) nunca apareciam no
+"Show chunks" nem tinham nenhuma visão por chunk. Esta fatia fecha as três lacunas de uma vez,
+mantendo o design de todo o resto da Fase 4: nada tenta resolver conflito ou reconstruir estado,
+só relatar o que mudou.
+
+**Nether/End — conserto só de frontend.** `diff_region_chunks`/`diff_chunk_blocks` do lado Rust
+já eram agnósticos de pasta — só olham o nome do arquivo (`r.<x>.<z>.mca`) via
+`parse_region_coords`, nunca o caminho completo. O único bloqueio era o filtro de UI
+(`isRegionFile` em `WorldBranches.tsx`) que só aceitava caminhos começando com `region/`.
+Renomeado pra `regionFileKind(path)`, que casa `(?:DIM-1\/|DIM1\/)?(region|entities)\/.*\.mca$` e
+devolve qual dos dois formatos de chunk o arquivo tem (`"blocks"` ou `"entities"`) — cobrindo as
+três pastas de dimensão de uma view só, sem duplicar a lógica de detecção.
+
+**Diff de entidades por chunk — identidade por `UUID`, não por posição.** Investigado ao vivo
+(extensão temporária em `mca-bench inspect`, aplicada a um chunk real de `entities/` do mundo
+`medieval`) que toda entidade carrega um campo `UUID` — `IntArray` de 4 inteiros, ex.
+`[-1428584928, -1209581274, -1358458702, -773260624]` — estável entre versões do mesmo mundo.
+Isso muda a forma do diff em relação a bloco: bloco não tem identidade própria, só posição (por
+isso `diff_chunk_blocks` compara posição a posição); entidade tem identidade e pode estar em
+qualquer posição, então o diff certo é por conjunto de UUIDs — quem só existe do lado `from`
+(`removed`), quem só existe do lado `to` (`added`). Uma entidade presente nos dois lados não
+aparece no diff nem que tenha se movido ou mudado de vida/stats — posição/estado não fazem parte
+da identidade de diffing (mesmo princípio de `count_chunk_entities`, que ignora tudo exceto
+`id`, só que aqui também precisa do `UUID`).
+
+- `entity_identity`/`decode_chunk_entities`/`diff_chunk_entities` em `mcgit-world::chunk` — o
+  identificador de diffing é `(id, UUID stringificado)`; `UUID` ausente faz a entidade ser
+  ignorada (mesma leniência de `count_chunk_entities`) em vez de erro, já que uma entidade
+  malformada isolada não deveria travar o diff do chunk inteiro. Tipos novos em `types.rs`:
+  `Presence` (`Added`/`Removed`, compartilhado com o diff de estruturas abaixo — diferente de
+  `ChunkStatus`, que tem um terceiro estado `Changed` que não faz sentido aqui, já que uma
+  entidade ou existe ou não existe de cada lado) e `EntityDiff { id, uuid, presence }`.
+- `mcgit_core::git::diff_chunk_entities` reaproveita `read_chunk_nbt` sem mudança nenhuma — a
+  função já era agnóstica de formato de chunk (só extrai bytes brutos via `fastanvil::Region`),
+  então funciona igual pra um caminho de `entities/` como já funcionava pra `region/`.
+- Comando Tauri `diff_world_chunk_entities`, DTO `EntityDiffDto`.
+- UI: `WorldBranches.tsx` decide, por `regionFileKind`, o que buscar ao clicar numa célula
+  `changed` da grade — `region/` busca blocos **e** estruturas (a seguir) em paralelo,
+  `entities/` busca só entidades. Seção nova "Entities changed in chunk (x, z)" com uma linha por
+  entidade (`added`/`removed` — `minecraft:sheep`). `RegionChunkMap.tsx` ganha um prop
+  `detailLabel` (`"blocks and structures"` ou `"entities"`) só pra trocar o texto da legenda
+  ("Click a changed chunk to see its ___"), sem nenhuma outra mudança — a grade em si já era
+  agnóstica de conteúdo, só desenha status por célula.
+
+**Diff de estruturas por chunk — conjunto de chaves de `structures.starts`.** Mesmo princípio já
+confirmado nas estatísticas da Fase 4 (cada estrutura gerada aparece como "start" só no chunk
+onde começou), agora comparado lado a lado em vez de somado: `decode_chunk_structure_starts`
+extrai o conjunto de chaves de `structures.starts` de cada lado, `diff_chunk_structures` devolve
+a diferença simétrica como `added`/`removed` por tipo de estrutura (`StructureDiff { id,
+presence }`). Confirmado ao vivo (mesma extensão temporária do `mca-bench`) que uma entrada de
+`starts` é diretamente o id da estrutura como chave (`"minecraft:mineshaft"`), sem nenhum
+wrapper `"id"`/`"INVALID"` por baixo pra filtrar — o mesmo shape que `count_chunk_structures` já
+assumia, agora verificado contra um mineshaft real gerado no mundo `medieval` (não só chunks com
+`starts` vazio, que foi tudo que as fatias anteriores tinham inspecionado ao vivo). Comando Tauri
+`diff_world_chunk_structures`, DTO `StructureDiffDto`, seção "Structures changed in chunk (x, z)"
+sempre ao lado de "Blocks changed" pra arquivos de `region/` (mesmo quando vazia — mostra "No
+structures differ." explicitamente, mesmo padrão de "No blocks differ..." já usado).
+
+**Testes**: 8 novos em `mcgit-world::chunk` (entidades: added/removed por UUID, ignora entidade
+inalterada nos dois lados, chunk vazio; estruturas: added/removed por chave, ignora uma presente
+nos dois lados, chunk sem a chave `structures` nenhuma) e 10 novos em `mcgit-core::git` (as duas
+novas funções contra um histórico Git real, construído com `fastanvil::Region::create` do mesmo
+jeito que os testes de `diff_chunk_blocks`/`world_*_stats` já faziam) — 89 testes no workspace,
+todos verdes; `npx tsc --noEmit` limpo.
+
+**Verificado ao vivo pela GUI real** (`GDK_BACKEND=x11`/`xdotool`/`spectacle`, `npx tauri dev` na
+tela livre): três edições controladas no mundo `TestWorld`, cada uma isolando uma das três
+lacunas. (1) Nether: como o mundo de teste real não tinha Nether gerado, um `DIM-1/region/
+r.0.0.mca` sintético foi criado (extensão temporária no `mca-bench`, `create-region-with-block`)
+com um chunk de palette de 2 tipos (`netherrack`/`soul_sand`), commitado, depois o bloco (0,0,0)
+trocado numa branch de teste — grade mostrando o chunk `(0, 0)` do Nether corretamente, "Blocks
+changed in chunk (0, 0): minecraft:netherrack → minecraft:soul_sand" e "Structures changed in
+chunk (0, 0): No structures differ." lado a lado. (2) Entidades: a entidade real já presente em
+`entities/r.-1.0.mca` (um `minecraft:chest_minecart` com `UUID` real, achado numa investigação
+anterior desta mesma sessão) removida na branch de teste (`mca-bench remove-entity`) — "Entities
+changed in chunk (-28, 0): removed — minecraft:chest_minecart", legenda da grade corretamente
+dizendo "its entities" em vez de "its blocks and structures". (3) Estruturas: um
+`structures.starts` novo adicionado a um chunk de `region/r.0.0.mca` que não tinha nenhum
+(`mca-bench add-structure-start`) — "Blocks changed in chunk (1, 0): No blocks differ..." e
+"Structures changed in chunk (1, 0): added — minecraft:village_plains", confirmando que as duas
+seções convivem corretamente mesmo quando só uma delas tem conteúdo. As três extensões
+temporárias do `mca-bench` (`create-region-with-block`, `remove-entity`, `add-structure-start`)
+foram revertidas depois do uso, e o `TestWorld` (branch de teste + região sintética do Nether)
+foi limpo de volta ao estado anterior à sessão.
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

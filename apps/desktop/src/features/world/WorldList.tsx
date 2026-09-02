@@ -6,9 +6,11 @@ import type {
   Branch,
   ChunkDiff,
   EntityCount,
+  EntityDiff,
   FileChange,
   Snapshot,
   StructureCount,
+  StructureDiff,
   World,
 } from "../../api/world";
 import { SaveSnapshotForm } from "./SaveSnapshotForm";
@@ -32,6 +34,16 @@ type Props = {
     | { otherBranch: string; path: string; chunkX: number; chunkZ: number; blocks: BlockDiff[] }
     | undefined
   >;
+  chunkStructureDiffByWorld: Record<
+    string,
+    | { otherBranch: string; path: string; chunkX: number; chunkZ: number; structures: StructureDiff[] }
+    | undefined
+  >;
+  chunkEntityDiffByWorld: Record<
+    string,
+    | { otherBranch: string; path: string; chunkX: number; chunkZ: number; entities: EntityDiff[] }
+    | undefined
+  >;
   mergeStateByWorld: Record<string, MergeState | undefined>;
   onToggleVersioning: (folderName: string, enable: boolean) => void;
   onSaveSnapshot: (folderName: string, message: string) => void;
@@ -45,6 +57,20 @@ type Props = {
   onCompareBranch: (folderName: string, otherBranch: string) => void;
   onShowRegionChunks: (folderName: string, otherBranch: string, path: string) => void;
   onShowChunkBlocks: (
+    folderName: string,
+    otherBranch: string,
+    path: string,
+    chunkX: number,
+    chunkZ: number,
+  ) => void;
+  onShowChunkStructures: (
+    folderName: string,
+    otherBranch: string,
+    path: string,
+    chunkX: number,
+    chunkZ: number,
+  ) => void;
+  onShowChunkEntities: (
     folderName: string,
     otherBranch: string,
     path: string,
@@ -69,6 +95,8 @@ export function WorldList({
   diffsByWorld,
   regionChunkDiffByWorld,
   chunkBlockDiffByWorld,
+  chunkStructureDiffByWorld,
+  chunkEntityDiffByWorld,
   mergeStateByWorld,
   onToggleVersioning,
   onSaveSnapshot,
@@ -82,6 +110,8 @@ export function WorldList({
   onCompareBranch,
   onShowRegionChunks,
   onShowChunkBlocks,
+  onShowChunkStructures,
+  onShowChunkEntities,
   onPreviewMerge,
   onCancelMergePreview,
   onMerge,
@@ -159,6 +189,8 @@ export function WorldList({
                       diff={diffsByWorld[world.folder_name]}
                       regionChunkDiff={regionChunkDiffByWorld[world.folder_name]}
                       chunkBlockDiff={chunkBlockDiffByWorld[world.folder_name]}
+                      chunkStructureDiff={chunkStructureDiffByWorld[world.folder_name]}
+                      chunkEntityDiff={chunkEntityDiffByWorld[world.folder_name]}
                       mergeState={mergeStateByWorld[world.folder_name]}
                       onCreate={(name) => onCreateBranch(world.folder_name, name)}
                       onSwitch={(name) => onSwitchBranch(world.folder_name, name)}
@@ -168,6 +200,12 @@ export function WorldList({
                       }
                       onShowChunkBlocks={(otherBranch, path, chunkX, chunkZ) =>
                         onShowChunkBlocks(world.folder_name, otherBranch, path, chunkX, chunkZ)
+                      }
+                      onShowChunkStructures={(otherBranch, path, chunkX, chunkZ) =>
+                        onShowChunkStructures(world.folder_name, otherBranch, path, chunkX, chunkZ)
+                      }
+                      onShowChunkEntities={(otherBranch, path, chunkX, chunkZ) =>
+                        onShowChunkEntities(world.folder_name, otherBranch, path, chunkX, chunkZ)
                       }
                       onPreviewMerge={(name) => onPreviewMerge(world.folder_name, name)}
                       onCancelMergePreview={() => onCancelMergePreview(world.folder_name)}

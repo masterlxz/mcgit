@@ -468,6 +468,57 @@ pub fn diff_chunk_blocks(
         .map_err(|e| GitError::CommandFailed(e.to_string()))
 }
 
+/// Diffs one chunk's entities (mobs, dropped items, ...) between `from` and
+/// `to`, by `UUID` — which ones appeared and which disappeared. `path` is
+/// the region file the chunk lives in, but here it's an `entities/` file
+/// (e.g. `"entities/r.0.0.mca"`), not `region/` — a different folder with a
+/// different per-chunk NBT shape (see `mcgit_world::diff_chunk_entities`),
+/// though the same `r.<x>.<z>.mca` naming and 32×32 layout, so
+/// `read_chunk_nbt` works unchanged.
+pub fn diff_chunk_entities(
+    world_dir: &Path,
+    from: &str,
+    to: &str,
+    path: &str,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> Result<Vec<mcgit_world::EntityDiff>, GitError> {
+    let filename = path.rsplit('/').next().unwrap_or(path);
+    let (region_x, region_z) = mcgit_world::parse_region_coords(filename)
+        .ok_or_else(|| GitError::CommandFailed(format!("not a region file path: {path}")))?;
+    let local_x = (chunk_x - region_x * 32) as usize;
+    let local_z = (chunk_z - region_z * 32) as usize;
+
+    let from_chunk = read_chunk_nbt(world_dir, from, path, local_x, local_z)?;
+    let to_chunk = read_chunk_nbt(world_dir, to, path, local_x, local_z)?;
+
+    mcgit_world::diff_chunk_entities(&from_chunk, &to_chunk).map_err(|e| GitError::CommandFailed(e.to_string()))
+}
+
+/// Diffs one chunk's generated structures between `from` and `to`, by
+/// structure id — which types started or stopped being recorded as
+/// starting there. `path` is a `region/` file, same folder `diff_chunk_blocks`
+/// reads, since a chunk's `structures.starts` lives alongside its blocks.
+pub fn diff_chunk_structures(
+    world_dir: &Path,
+    from: &str,
+    to: &str,
+    path: &str,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> Result<Vec<mcgit_world::StructureDiff>, GitError> {
+    let filename = path.rsplit('/').next().unwrap_or(path);
+    let (region_x, region_z) = mcgit_world::parse_region_coords(filename)
+        .ok_or_else(|| GitError::CommandFailed(format!("not a region file path: {path}")))?;
+    let local_x = (chunk_x - region_x * 32) as usize;
+    let local_z = (chunk_z - region_z * 32) as usize;
+
+    let from_chunk = read_chunk_nbt(world_dir, from, path, local_x, local_z)?;
+    let to_chunk = read_chunk_nbt(world_dir, to, path, local_x, local_z)?;
+
+    mcgit_world::diff_chunk_structures(&from_chunk, &to_chunk).map_err(|e| GitError::CommandFailed(e.to_string()))
+}
+
 /// Fetches `path` (a region file) as it exists at `git_ref` and pulls out
 /// the raw NBT bytes of one chunk (local `0..32` coordinates within that
 /// region) from it.
@@ -1867,5 +1918,83 @@ mod tests {
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert_eq!(stats, vec![("minecraft:sheep".to_string(), 2), ("minecraft:cow".to_string(), 1)]);
+    }
+
+    #[test]
+    fn diff_chunk_structures_reports_the_structure_that_changed_in_a_real_git_history() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-chunk-structure-diff-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        std::fs::create_dir_all(world_dir.join("region")).unwrap();
+        init(&world_dir).unwrap();
+
+        let base = build_region_with_structure_start(0, 0, "minecraft:mineshaft");
+        std::fs::write(world_dir.join("region").join("r.0.0.mca"), &base).unwrap();
+        commit(&world_dir, "Base region").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+
+        let changed = build_region_with_structure_start(0, 0, "minecraft:village_plains");
+        std::fs::write(world_dir.join("region").join("r.0.0.mca"), &changed).unwrap();
+        commit(&world_dir, "Different structure starts here now").unwrap();
+
+        let diffs = diff_chunk_structures(&world_dir, &main, "experiment", "region/r.0.0.mca", 0, 0).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(diffs.len(), 2);
+        assert!(diffs
+            .iter()
+            .any(|d| d.id == "minecraft:mineshaft" && d.presence == mcgit_world::Presence::Removed));
+        assert!(diffs
+            .iter()
+            .any(|d| d.id == "minecraft:village_plains" && d.presence == mcgit_world::Presence::Added));
+    }
+
+    /// Builds an `entities/`-shaped region with one chunk holding one entity
+    /// of `id`/`uuid` — unlike `build_region_with_entity`, includes `UUID`
+    /// (required for `diff_chunk_entities`'s identity, see `entity_identity`).
+    fn build_region_with_entity_uuid(local_x: usize, local_z: usize, id: &str, uuid: [i32; 4]) -> Vec<u8> {
+        use std::collections::HashMap;
+        use std::io::Cursor;
+
+        let mut entity = HashMap::new();
+        entity.insert("id".to_string(), fastnbt::Value::String(id.to_string()));
+        entity.insert("UUID".to_string(), fastnbt::Value::IntArray(fastnbt::IntArray::new(uuid.to_vec())));
+
+        let mut chunk = HashMap::new();
+        chunk.insert("Entities".to_string(), fastnbt::Value::List(vec![fastnbt::Value::Compound(entity)]));
+        let bytes = fastnbt::to_bytes(&fastnbt::Value::Compound(chunk)).unwrap();
+
+        let mut region = fastanvil::Region::create(Cursor::new(Vec::new())).unwrap();
+        region.write_chunk(local_x, local_z, &bytes).unwrap();
+        region.into_inner().unwrap().into_inner()
+    }
+
+    #[test]
+    fn diff_chunk_entities_reports_the_entity_that_changed_in_a_real_git_history() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-chunk-entity-diff-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        std::fs::create_dir_all(world_dir.join("entities")).unwrap();
+        init(&world_dir).unwrap();
+
+        let base = build_region_with_entity_uuid(0, 0, "minecraft:sheep", [1, 2, 3, 4]);
+        std::fs::write(world_dir.join("entities").join("r.0.0.mca"), &base).unwrap();
+        commit(&world_dir, "Base region").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+
+        let changed = build_region_with_entity_uuid(0, 0, "minecraft:cow", [5, 6, 7, 8]);
+        std::fs::write(world_dir.join("entities").join("r.0.0.mca"), &changed).unwrap();
+        commit(&world_dir, "Sheep left, cow arrived").unwrap();
+
+        let diffs = diff_chunk_entities(&world_dir, &main, "experiment", "entities/r.0.0.mca", 0, 0).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(diffs.len(), 2);
+        assert!(diffs
+            .iter()
+            .any(|d| d.id == "minecraft:sheep" && d.presence == mcgit_world::Presence::Removed));
+        assert!(diffs
+            .iter()
+            .any(|d| d.id == "minecraft:cow" && d.presence == mcgit_world::Presence::Added));
     }
 }

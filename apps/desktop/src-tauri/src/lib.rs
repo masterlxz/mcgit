@@ -67,6 +67,8 @@ pub fn run() {
             commands::world::abort_world_merge,
             commands::world::diff_world_region_chunks,
             commands::world::diff_world_chunk_blocks,
+            commands::world::diff_world_chunk_entities,
+            commands::world::diff_world_chunk_structures,
             commands::world::world_block_stats,
             commands::world::world_structure_stats,
             commands::world::world_entity_stats,

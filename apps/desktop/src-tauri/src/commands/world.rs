@@ -638,6 +638,106 @@ pub async fn diff_world_chunk_blocks(
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct EntityDiffDto {
+    pub id: String,
+    pub uuid: String,
+    pub presence: String,
+}
+
+impl From<mcgit_world::EntityDiff> for EntityDiffDto {
+    fn from(diff: mcgit_world::EntityDiff) -> Self {
+        EntityDiffDto {
+            id: diff.id,
+            uuid: diff.uuid,
+            presence: presence_str(diff.presence).to_string(),
+        }
+    }
+}
+
+fn presence_str(presence: mcgit_world::Presence) -> &'static str {
+    match presence {
+        mcgit_world::Presence::Added => "added",
+        mcgit_world::Presence::Removed => "removed",
+    }
+}
+
+/// Diffs one chunk's entities (by `UUID`) between the world's current
+/// branch and `other_branch` — which ones appeared and which disappeared.
+/// `path` is an `entities/` file (e.g. `"entities/r.0.0.mca"`), the folder
+/// mobs and dropped items live in since 1.17 — not `region/`, which
+/// `diff_world_chunk_blocks` reads.
+#[tauri::command]
+pub async fn diff_world_chunk_entities(
+    instance_id: i64,
+    folder_name: String,
+    other_branch: String,
+    path: String,
+    chunk_x: i32,
+    chunk_z: i32,
+    state: State<'_, AppState>,
+) -> Result<Vec<EntityDiffDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    let diffs = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        let current = mcgit_core::git::current_branch(&world_dir)?;
+        mcgit_core::git::diff_chunk_entities(&world_dir, &current, &other_branch, &path, chunk_x, chunk_z)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(diffs.into_iter().map(EntityDiffDto::from).collect())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StructureDiffDto {
+    pub id: String,
+    pub presence: String,
+}
+
+impl From<mcgit_world::StructureDiff> for StructureDiffDto {
+    fn from(diff: mcgit_world::StructureDiff) -> Self {
+        StructureDiffDto {
+            id: diff.id,
+            presence: presence_str(diff.presence).to_string(),
+        }
+    }
+}
+
+/// Diffs one chunk's generated structures (by structure id) between the
+/// world's current branch and `other_branch` — which types started or
+/// stopped being recorded as starting there. `path` is a `region/` file,
+/// same folder `diff_world_chunk_blocks` reads.
+#[tauri::command]
+pub async fn diff_world_chunk_structures(
+    instance_id: i64,
+    folder_name: String,
+    other_branch: String,
+    path: String,
+    chunk_x: i32,
+    chunk_z: i32,
+    state: State<'_, AppState>,
+) -> Result<Vec<StructureDiffDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    let diffs = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        let current = mcgit_core::git::current_branch(&world_dir)?;
+        mcgit_core::git::diff_chunk_structures(&world_dir, &current, &other_branch, &path, chunk_x, chunk_z)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(diffs.into_iter().map(StructureDiffDto::from).collect())
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct BlockCountDto {
     pub name: String,
     pub count: u64,

@@ -1178,3 +1178,49 @@ natural: fechar essa lacuna do diff, ou virar pra Fase 2 (auto-snapshot/auto-gc)
 usuário. Pendente pra mais adiante: passada de UX/identidade visual no app inteiro (memória, não
 bloqueio). Game Runner e login Microsoft seguem pausados/bloqueados por `PENDING.md` #1; decisão
 de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 10 — 2026-09-02 — Fase 4: fecha diff por chunk (entidades/estruturas/Nether-End)
+
+Retomada direta ("bora continuar?"), usuário escolheu via `AskUserQuestion` fechar de vez o item
+que tinha ficado `[~]` na Fase 4: o diff por chunk cobria blocos mas não entidades/estruturas/
+Nether-End (só as estatísticas cobriam isso). Escopo confirmado numa segunda pergunta — os 3
+juntos numa sessão só, em vez de fatiar mais.
+
+Investigação ao vivo antes de codar (leitura do código existente + extensão temporária no
+`mca-bench inspect` contra o mundo `medieval` real): confirmado que o filtro de frontend que
+decidia "esse arquivo é diffável por chunk" só aceitava `region/` (bloqueio artificial — o lado
+Rust já era agnóstico de pasta); que toda entidade carrega um `UUID` estável (`IntArray` de 4
+inteiros), diferente de bloco, que não tem identidade própria; e que uma entrada de
+`structures.starts` é diretamente o id da estrutura como chave, sem wrapper "INVALID" por baixo
+pra filtrar (confirma o que as estatísticas da Fase 4 já assumiam, agora contra um mineshaft real
+gerado, não só chunks vazios).
+
+Implementado: `regionFileKind` no frontend substitui o filtro antigo, cobrindo `region/`/
+`entities/` nas três pastas de dimensão (`DIM-1`/`DIM1`/raiz); `diff_chunk_entities` (por UUID,
+added/removed) e `diff_chunk_structures` (por chave de `starts`, added/removed) em
+`mcgit-world::chunk`, tipo `Presence` compartilhado entre os dois; wiring completo até a UI
+(`diff_world_chunk_entities`/`diff_world_chunk_structures`, DTOs, `WorldBranches.tsx` decidindo o
+que buscar por tipo de arquivo, `RegionChunkMap.tsx` ganha um `detailLabel` pra legenda). 18
+testes novos (8 `mcgit-world`, 10 `mcgit-core`), 89 no workspace, todos verdes; `tsc --noEmit`
+limpo.
+
+Verificado ao vivo pela GUI real (`GDK_BACKEND=x11`/`xdotool`/`spectacle`, `npx tauri dev`): três
+edições controladas no `TestWorld`, uma por lacuna — região sintética do Nether (o mundo de teste
+não tinha um gerado) com um bloco trocado, uma entidade real removida de `entities/`, um
+`structures.starts` novo adicionado a um chunk de `region/` sem nenhum. As três confirmaram o
+comportamento esperado na GUI: chunk do Nether aparecendo na grade com blocos+estruturas lado a
+lado; chunk de entidades mostrando "removed — minecraft:chest_minecart" com a legenda certa;
+chunk de região mostrando "added — minecraft:village_plains" sem interferir na seção de blocos ao
+lado. Artefatos de teste (branch, região sintética, extensões temporárias do `mca-bench`)
+revertidos/limpos depois da verificação.
+
+Detalhes completos em `ARCHITECTURE.md` §Fase 4 (subseção "Diff por chunk — fechando a lacuna de
+entidades/estruturas/Nether-End"); checklist fechado em `PHASE.md` — **Fase 4 completa**, os 4
+itens implementados e verificados ao vivo.
+
+**Estado ao final da sessão**: Fase 4 fechada por completo. Próxima frente em aberto: Fase 2
+(auto-snapshot/auto-gc) ou a passada de UX/identidade visual no app inteiro (registrada em
+memória, não bloqueio) — a critério do usuário. Game Runner e login Microsoft seguem pausados/
+bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não urgente.

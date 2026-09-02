@@ -215,3 +215,50 @@ export function diffWorldChunkBlocks(
     chunkZ,
   });
 }
+
+export type EntityDiff = {
+  id: string;
+  uuid: string;
+  presence: "added" | "removed";
+};
+
+export function diffWorldChunkEntities(
+  instanceId: number,
+  folderName: string,
+  otherBranch: string,
+  path: string,
+  chunkX: number,
+  chunkZ: number,
+): Promise<EntityDiff[]> {
+  return invoke("diff_world_chunk_entities", {
+    instanceId,
+    folderName,
+    otherBranch,
+    path,
+    chunkX,
+    chunkZ,
+  });
+}
+
+export type StructureDiff = {
+  id: string;
+  presence: "added" | "removed";
+};
+
+export function diffWorldChunkStructures(
+  instanceId: number,
+  folderName: string,
+  otherBranch: string,
+  path: string,
+  chunkX: number,
+  chunkZ: number,
+): Promise<StructureDiff[]> {
+  return invoke("diff_world_chunk_structures", {
+    instanceId,
+    folderName,
+    otherBranch,
+    path,
+    chunkX,
+    chunkZ,
+  });
+}

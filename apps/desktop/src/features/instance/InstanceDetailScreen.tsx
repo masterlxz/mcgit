@@ -8,6 +8,8 @@ import {
   deleteWorldSnapshot,
   diffWorldBranches,
   diffWorldChunkBlocks,
+  diffWorldChunkEntities,
+  diffWorldChunkStructures,
   diffWorldRegionChunks,
   disableWorldVersioning,
   enableWorldVersioning,
@@ -28,9 +30,11 @@ import {
   type Branch,
   type ChunkDiff,
   type EntityCount,
+  type EntityDiff,
   type FileChange,
   type Snapshot,
   type StructureCount,
+  type StructureDiff,
   type World,
 } from "../../api/world";
 import { WorldList } from "../world/WorldList";
@@ -69,6 +73,32 @@ export function InstanceDetailScreen() {
           chunkX: number;
           chunkZ: number;
           blocks: BlockDiff[];
+        }
+      | undefined
+    >
+  >({});
+  const [chunkStructureDiffByWorld, setChunkStructureDiffByWorld] = useState<
+    Record<
+      string,
+      | {
+          otherBranch: string;
+          path: string;
+          chunkX: number;
+          chunkZ: number;
+          structures: StructureDiff[];
+        }
+      | undefined
+    >
+  >({});
+  const [chunkEntityDiffByWorld, setChunkEntityDiffByWorld] = useState<
+    Record<
+      string,
+      | {
+          otherBranch: string;
+          path: string;
+          chunkX: number;
+          chunkZ: number;
+          entities: EntityDiff[];
         }
       | undefined
     >
@@ -212,6 +242,8 @@ export function InstanceDetailScreen() {
       setDiffsByWorld((prev) => ({ ...prev, [folderName]: undefined }));
       setRegionChunkDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
       setChunkBlockDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setChunkStructureDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setChunkEntityDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
       setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
     } catch (err) {
       setError(String(err));
@@ -240,6 +272,8 @@ export function InstanceDetailScreen() {
       setDiffsByWorld((prev) => ({ ...prev, [folderName]: undefined }));
       setRegionChunkDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
       setChunkBlockDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setChunkStructureDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setChunkEntityDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
       setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
     } catch (err) {
       setError(String(err));
@@ -261,9 +295,11 @@ export function InstanceDetailScreen() {
     try {
       const chunks = await diffWorldRegionChunks(instanceId, folderName, otherBranch, path);
       setRegionChunkDiffByWorld((prev) => ({ ...prev, [folderName]: { otherBranch, path, chunks } }));
-      // The chunk list just changed, so any open block-level breakdown
+      // The chunk list just changed, so any open per-chunk breakdown
       // (computed against the old list) is no longer meaningful.
       setChunkBlockDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setChunkStructureDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setChunkEntityDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
     } catch (err) {
       setError(String(err));
     }
@@ -282,6 +318,44 @@ export function InstanceDetailScreen() {
       setChunkBlockDiffByWorld((prev) => ({
         ...prev,
         [folderName]: { otherBranch, path, chunkX, chunkZ, blocks },
+      }));
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleShowChunkStructures(
+    folderName: string,
+    otherBranch: string,
+    path: string,
+    chunkX: number,
+    chunkZ: number,
+  ) {
+    setError(null);
+    try {
+      const structures = await diffWorldChunkStructures(instanceId, folderName, otherBranch, path, chunkX, chunkZ);
+      setChunkStructureDiffByWorld((prev) => ({
+        ...prev,
+        [folderName]: { otherBranch, path, chunkX, chunkZ, structures },
+      }));
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleShowChunkEntities(
+    folderName: string,
+    otherBranch: string,
+    path: string,
+    chunkX: number,
+    chunkZ: number,
+  ) {
+    setError(null);
+    try {
+      const entities = await diffWorldChunkEntities(instanceId, folderName, otherBranch, path, chunkX, chunkZ);
+      setChunkEntityDiffByWorld((prev) => ({
+        ...prev,
+        [folderName]: { otherBranch, path, chunkX, chunkZ, entities },
       }));
     } catch (err) {
       setError(String(err));
@@ -401,6 +475,8 @@ export function InstanceDetailScreen() {
         diffsByWorld={diffsByWorld}
         regionChunkDiffByWorld={regionChunkDiffByWorld}
         chunkBlockDiffByWorld={chunkBlockDiffByWorld}
+        chunkStructureDiffByWorld={chunkStructureDiffByWorld}
+        chunkEntityDiffByWorld={chunkEntityDiffByWorld}
         mergeStateByWorld={mergeStateByWorld}
         onToggleVersioning={handleToggleVersioning}
         onSaveSnapshot={handleSaveSnapshot}
@@ -414,6 +490,8 @@ export function InstanceDetailScreen() {
         onCompareBranch={handleCompareBranch}
         onShowRegionChunks={handleShowRegionChunks}
         onShowChunkBlocks={handleShowChunkBlocks}
+        onShowChunkStructures={handleShowChunkStructures}
+        onShowChunkEntities={handleShowChunkEntities}
         onPreviewMerge={handlePreviewMerge}
         onCancelMergePreview={handleCancelMergePreview}
         onMerge={handleMerge}

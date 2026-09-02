@@ -45,3 +45,37 @@ pub struct BlockDiff {
     pub from: String,
     pub to: String,
 }
+
+/// Whether something newly appeared or newly disappeared between two
+/// versions — shared by entity and structure diffs, where (unlike a block,
+/// which has a stable position to compare in place) there's no third
+/// "changed" state: an entity/structure instance either exists on a side or
+/// it doesn't.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Presence {
+    Added,
+    Removed,
+}
+
+/// One entity (mob, dropped item, ...) that appeared or disappeared between
+/// two versions of the same chunk's `entities/` data, identified by its
+/// stable `UUID` — not position, since entities move, so an entity that
+/// merely walked around shouldn't show up as removed-then-added. `id` is
+/// the entity type (e.g. `"minecraft:sheep"`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityDiff {
+    pub id: String,
+    pub uuid: String,
+    pub presence: Presence,
+}
+
+/// One generated structure (village, trial chamber, ...) that started or
+/// stopped being recorded as starting in a chunk between two versions,
+/// identified by its structure type id (e.g. `"minecraft:village_plains"`)
+/// — see `count_chunk_structures` for why a `structures.starts` key is a
+/// reliable one-instance-per-chunk identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructureDiff {
+    pub id: String,
+    pub presence: Presence,
+}

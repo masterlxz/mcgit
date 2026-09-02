@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use fastnbt::Value;
 
-use crate::types::{BlockDiff, WorldError};
+use crate::types::{BlockDiff, EntityDiff, Presence, StructureDiff, WorldError};
 
 const BLOCKS_PER_SECTION: usize = 16 * 16 * 16;
 
@@ -350,6 +350,122 @@ pub fn diff_chunk_blocks(
     Ok(diffs)
 }
 
+/// Extracts an entity's stable identity for diffing — its `id` (entity
+/// type) plus its `UUID`, stringified from the 4-int array Minecraft stores
+/// it as (confirmed live against a real `entities/` chunk: e.g.
+/// `IntArray([-1428584928, -1209581274, -1358458702, -773260624])`). An
+/// entity missing either field is skipped rather than erroring — same
+/// leniency as `count_chunk_entities`, since a malformed one-off entity
+/// shouldn't block diffing every other one in the chunk.
+fn entity_identity(entity: &HashMap<String, Value>) -> Option<(String, String)> {
+    let Some(Value::String(id)) = entity.get("id") else {
+        return None;
+    };
+    let Some(Value::IntArray(uuid)) = entity.get("UUID") else {
+        return None;
+    };
+    let uuid = uuid.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(",");
+    Some((id.clone(), uuid))
+}
+
+/// Parses an `entities/`-shaped chunk (root `Entities` list, see
+/// `count_chunk_entities`) into a `UUID -> id` map. A missing `Entities`
+/// list decodes as "no entities", not an error.
+fn decode_chunk_entities(nbt_bytes: &[u8]) -> Result<HashMap<String, String>, WorldError> {
+    let chunk: Value = fastnbt::from_bytes(nbt_bytes)?;
+    let Value::Compound(chunk) = chunk else {
+        return Err(WorldError::Shape("chunk root is not a compound".into()));
+    };
+    let Some(Value::List(entities)) = chunk.get("Entities") else {
+        return Ok(HashMap::new());
+    };
+
+    let mut out = HashMap::new();
+    for entity in entities {
+        let Value::Compound(entity) = entity else {
+            continue;
+        };
+        if let Some((id, uuid)) = entity_identity(entity) {
+            out.insert(uuid, id);
+        }
+    }
+    Ok(out)
+}
+
+/// Diffs two versions of the same chunk's `entities/` data by `UUID`: which
+/// entities appeared (in `to` but not `from`) and which disappeared (in
+/// `from` but not `to`). An entity present on both sides — even one that
+/// moved or took damage — reports nothing, since position/stats aren't part
+/// of its diffing identity (see `entity_identity`).
+pub fn diff_chunk_entities(from_nbt: &[u8], to_nbt: &[u8]) -> Result<Vec<EntityDiff>, WorldError> {
+    let from = decode_chunk_entities(from_nbt)?;
+    let to = decode_chunk_entities(to_nbt)?;
+
+    let mut diffs = Vec::new();
+    for (uuid, id) in &from {
+        if !to.contains_key(uuid) {
+            diffs.push(EntityDiff {
+                id: id.clone(),
+                uuid: uuid.clone(),
+                presence: Presence::Removed,
+            });
+        }
+    }
+    for (uuid, id) in &to {
+        if !from.contains_key(uuid) {
+            diffs.push(EntityDiff {
+                id: id.clone(),
+                uuid: uuid.clone(),
+                presence: Presence::Added,
+            });
+        }
+    }
+    diffs.sort_by(|a, b| a.uuid.cmp(&b.uuid));
+    Ok(diffs)
+}
+
+/// Parses a `region/`-shaped chunk's `structures.starts` (see
+/// `count_chunk_structures`) into the set of structure ids that start
+/// there. Missing `structures`/`starts` decodes as "no structures", not an
+/// error — same leniency as the stats-counting sibling.
+fn decode_chunk_structure_starts(nbt_bytes: &[u8]) -> Result<HashSet<String>, WorldError> {
+    let chunk: Value = fastnbt::from_bytes(nbt_bytes)?;
+    let Value::Compound(chunk) = chunk else {
+        return Err(WorldError::Shape("chunk root is not a compound".into()));
+    };
+    let Some(Value::Compound(structures)) = chunk.get("structures") else {
+        return Ok(HashSet::new());
+    };
+    let Some(Value::Compound(starts)) = structures.get("starts") else {
+        return Ok(HashSet::new());
+    };
+    Ok(starts.keys().cloned().collect())
+}
+
+/// Diffs two versions of the same chunk's `structures.starts` by structure
+/// id: which structure types started being recorded as starting there (in
+/// `to` but not `from`) and which stopped (in `from` but not `to`) — the
+/// same set-of-keys read `count_chunk_structures` sums across a whole
+/// region, here compared side by side for one chunk.
+pub fn diff_chunk_structures(from_nbt: &[u8], to_nbt: &[u8]) -> Result<Vec<StructureDiff>, WorldError> {
+    let from = decode_chunk_structure_starts(from_nbt)?;
+    let to = decode_chunk_structure_starts(to_nbt)?;
+
+    let mut diffs: Vec<StructureDiff> = from
+        .difference(&to)
+        .map(|id| StructureDiff {
+            id: id.clone(),
+            presence: Presence::Removed,
+        })
+        .chain(to.difference(&from).map(|id| StructureDiff {
+            id: id.clone(),
+            presence: Presence::Added,
+        }))
+        .collect();
+    diffs.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(diffs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -585,6 +701,93 @@ mod tests {
         // lit/unlit distinction that matters for diffing collapses here.
         assert_eq!(counts.len(), 1);
         assert_eq!(counts["minecraft:furnace"], BLOCKS_PER_SECTION as u64);
+    }
+
+    fn entity_nbt(id: &str, uuid: [i32; 4]) -> Value {
+        let mut entity = HashMap::new();
+        entity.insert("id".to_string(), Value::String(id.to_string()));
+        entity.insert("UUID".to_string(), Value::IntArray(fastnbt::IntArray::new(uuid.to_vec())));
+        Value::Compound(entity)
+    }
+
+    fn entities_chunk_bytes(entities: Vec<Value>) -> Vec<u8> {
+        let mut chunk = HashMap::new();
+        chunk.insert("Entities".to_string(), Value::List(entities));
+        fastnbt::to_bytes(&Value::Compound(chunk)).unwrap()
+    }
+
+    #[test]
+    fn diff_chunk_entities_reports_added_and_removed_by_uuid() {
+        let from_bytes = entities_chunk_bytes(vec![entity_nbt("minecraft:sheep", [1, 2, 3, 4])]);
+        let to_bytes = entities_chunk_bytes(vec![entity_nbt("minecraft:cow", [5, 6, 7, 8])]);
+
+        let mut diffs = diff_chunk_entities(&from_bytes, &to_bytes).unwrap();
+        diffs.sort_by(|a, b| a.id.cmp(&b.id));
+
+        assert_eq!(diffs.len(), 2);
+        assert_eq!(diffs[0].id, "minecraft:cow");
+        assert_eq!(diffs[0].presence, Presence::Added);
+        assert_eq!(diffs[1].id, "minecraft:sheep");
+        assert_eq!(diffs[1].presence, Presence::Removed);
+    }
+
+    /// The same entity, same UUID, but a different position on each side
+    /// (it just walked around) — not a diffing-relevant change.
+    #[test]
+    fn diff_chunk_entities_ignores_one_present_unchanged_on_both_sides() {
+        let from_bytes = entities_chunk_bytes(vec![entity_nbt("minecraft:sheep", [1, 2, 3, 4])]);
+        let to_bytes = entities_chunk_bytes(vec![entity_nbt("minecraft:sheep", [1, 2, 3, 4])]);
+
+        let diffs = diff_chunk_entities(&from_bytes, &to_bytes).unwrap();
+        assert!(diffs.is_empty());
+    }
+
+    #[test]
+    fn diff_chunk_entities_on_empty_chunks_returns_empty() {
+        let bytes = entities_chunk_bytes(vec![]);
+        let diffs = diff_chunk_entities(&bytes, &bytes).unwrap();
+        assert!(diffs.is_empty());
+    }
+
+    fn region_chunk_with_structure_starts(ids: &[&str]) -> Vec<u8> {
+        let mut starts = HashMap::new();
+        for id in ids {
+            starts.insert(id.to_string(), Value::Compound(HashMap::new()));
+        }
+        let mut structures = HashMap::new();
+        structures.insert("starts".to_string(), Value::Compound(starts));
+
+        let mut chunk = HashMap::new();
+        chunk.insert("structures".to_string(), Value::Compound(structures));
+        fastnbt::to_bytes(&Value::Compound(chunk)).unwrap()
+    }
+
+    #[test]
+    fn diff_chunk_structures_reports_added_and_removed() {
+        let from_bytes = region_chunk_with_structure_starts(&["minecraft:mineshaft"]);
+        let to_bytes = region_chunk_with_structure_starts(&["minecraft:village_plains"]);
+
+        let diffs = diff_chunk_structures(&from_bytes, &to_bytes).unwrap();
+
+        assert_eq!(diffs.len(), 2);
+        assert_eq!(diffs[0].id, "minecraft:mineshaft");
+        assert_eq!(diffs[0].presence, Presence::Removed);
+        assert_eq!(diffs[1].id, "minecraft:village_plains");
+        assert_eq!(diffs[1].presence, Presence::Added);
+    }
+
+    #[test]
+    fn diff_chunk_structures_ignores_one_present_on_both_sides() {
+        let bytes = region_chunk_with_structure_starts(&["minecraft:mineshaft"]);
+        let diffs = diff_chunk_structures(&bytes, &bytes).unwrap();
+        assert!(diffs.is_empty());
+    }
+
+    #[test]
+    fn diff_chunk_structures_on_chunks_with_no_structures_key_returns_empty() {
+        let bytes = chunk_nbt_bytes(vec![]);
+        let diffs = diff_chunk_structures(&bytes, &bytes).unwrap();
+        assert!(diffs.is_empty());
     }
 
     #[test]

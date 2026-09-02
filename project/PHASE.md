@@ -290,7 +290,7 @@ garantir que a base de versionamento é sólida antes de expandir pra mods/modpa
 
 Antiga "Fase 3 — Minecraft-aware" do mcgit-ferramenta (v1.0).
 
-- [~] Diff específico de regiões/blocos/entidades/estruturas entre dois snapshots — primeira
+- [x] Diff específico de regiões/blocos/entidades/estruturas entre dois snapshots — primeira
   fatia implementada (Sessão 8, quinta continuação, 2026-09-01): **diff por chunk** entre duas
   branches, escolhida com o usuário por atacar direto o problema de granularidade achado na
   investigação de merge da Fase 6. Novo crate `mcgit-world` (pure lib, zero conhecimento de
@@ -301,7 +301,36 @@ Antiga "Fase 3 — Minecraft-aware" do mcgit-ferramenta (v1.0).
   "Parser NBT completo" abaixo). Ainda não cobre entidades/estruturas nem as dimensões
   Nether/End (só a pasta `region/` principal). Verificado ao vivo pela GUI real (tela livre):
   duas branches com um arquivo de região sintético editado num chunk só, comparação mostrando
-  corretamente `(0, 0) changed` e nada mais. Detalhes completos em `ARCHITECTURE.md` §Fase 4.
+  corretamente `(0, 0) changed` e nada mais. **Lacuna fechada (Sessão 10, 2026-09-02)**: as três
+  peças que faltavam — Nether/End, entidades, estruturas — foram todas fechadas na mesma fatia.
+  (1) Nether/End: o filtro de frontend que decidia se um arquivo era "diffável por chunk" só
+  aceitava caminhos começando com `region/` — o lado Rust já era agnóstico de pasta (só olha o
+  nome do arquivo `r.<x>.<z>.mca`), então bastou alargar o filtro (`regionFileKind` em
+  `WorldBranches.tsx`) pra reconhecer também `DIM-1/region/...` e `DIM1/region/...`, sem
+  nenhuma mudança em `mcgit-core`/`mcgit-world`. (2) Diff de entidades por chunk: investigado ao
+  vivo (extensão temporária no `mca-bench`) que cada entidade tem um `UUID` (`IntArray` de 4
+  inteiros) estável — diferente de bloco, que não tem identidade própria, só posição — então o
+  diff certo é por UUID (quem sumiu = removed, quem apareceu = added), não por posição/índice;
+  uma entidade que só andou não aparece no diff. Nova `diff_chunk_entities` em
+  `mcgit-world::chunk`, comando Tauri `diff_world_chunk_entities`, arquivos de `entities/`
+  ganham o mesmo botão "Show chunks" só que abrindo uma seção "Entities changed" em vez de
+  "Blocks changed". (3) Diff de estruturas por chunk: comparação do conjunto de chaves de
+  `structures.starts` entre os dois lados (added/removed por tipo) — mesmo princípio já usado
+  nas estatísticas da Fase 4, agora lado a lado em vez de somado. Nova `diff_chunk_structures`,
+  comando Tauri `diff_world_chunk_structures`, seção "Structures changed" nova ao lado de
+  "Blocks changed" pra arquivos de `region/`. 18 testes novos (8 em `mcgit-world`, 10 em
+  `mcgit-core`), 89 testes no workspace, todos verdes; `tsc --noEmit` limpo. **Verificado ao
+  vivo pela GUI real** (`GDK_BACKEND=x11`/`xdotool`/`spectacle`): três edições controladas no
+  mundo `TestWorld` (região `DIM-1/region/r.0.0.mca` sintética criada só pra este teste, já que
+  o mundo real não tinha Nether gerado; uma entidade removida de `entities/r.-1.0.mca`; um novo
+  `structures.starts` adicionado a `region/r.0.0.mca`) confirmaram, nessa ordem: chunk do Nether
+  aparecendo na grade e "Blocks changed in chunk (0, 0): minecraft:netherrack →
+  minecraft:soul_sand" com "Structures changed in chunk (0, 0): No structures differ."; chunk de
+  `entities/` mostrando "Entities changed in chunk (-28, 0): removed —
+  minecraft:chest_minecart"; chunk de `region/` mostrando "Structures changed in chunk (1, 0):
+  added — minecraft:village_plains". Artefatos de teste (branch `phase4-diff-check`, região
+  sintética do Nether) removidos do `TestWorld` depois da verificação. Detalhes completos em
+  `ARCHITECTURE.md` §Fase 4.
 - [x] Parser NBT completo (block-states) — implementado (Sessão 9, 2026-09-02): decodifica o
   `block_states` bit-packed (palette + índices) de cada seção de um chunk, incluindo o caso
   especial de palette de 1 tipo só (sem `data`), e diz exatamente qual bloco (posição absoluta +
@@ -347,7 +376,13 @@ Antiga "Fase 3 — Minecraft-aware" do mcgit-ferramenta (v1.0).
   existiam desde a fatia "diff por chunk"). Verificado ao vivo pela GUI real: comparação
   main↔experiment do mundo `medieval` de teste mostrando corretamente um único chunk `(0, 0)`
   amarelo no canto da grade, clique expandindo `(0, 0, 0): minecraft:deepslate[axis=y] →
-  minecraft:stone`. Fecha o último item em aberto da Fase 4.
+  minecraft:stone`. Fecha o último item da lista de checklist da Fase 4 — mas a lacuna
+  entidades/estruturas/Nether-End do primeiro item (diff por chunk) ainda seguia aberta nesse
+  momento, fechada só na Sessão 10 (ver nota nesse item acima).
+
+**Fase 4 completa** (Sessão 10, 2026-09-02): os 4 itens — diff por chunk, parser NBT completo,
+estatísticas, visualização — estão implementados e verificados ao vivo, cobrindo blocos,
+entidades, estruturas e as três dimensões (Overworld/Nether/End).
 
 ---
 
