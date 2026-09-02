@@ -815,6 +815,68 @@ toggle sobreviveu via `localStorage`, não só em memória do React.
 
 ---
 
+## Fase 4 — Minecraft-Aware World Diffing
+
+### Diff por chunk — primeira fatia implementada (Sessão 8, quinta continuação, 2026-09-01)
+
+Primeira fatia da Fase 4, escolhida com o usuário (`AskUserQuestion`) por atacar diretamente o
+problema de granularidade achado na investigação de merge da Fase 6: a comparação entre branches
+(`diff_branches`, Fase 6) só sabia dizer que um arquivo de região (`.mca`, 512×512 blocos) mudou
+como um todo. Esta fatia adiciona uma camada: pra um arquivo de região marcado como "modified",
+mostra **quais chunks (colunas de 16×16 blocos) especificamente mudaram** — sem decodificar
+bloco-a-bloco ainda (block-states são bit-packed com paleta, decodificar isso de verdade é o
+próximo passo, "Parser NBT completo").
+
+- **Novo crate `crates/mcgit-world`** (pure lib, zero conhecimento de Git): `fastanvil` 0.32 lê
+  regiões `.mca` por chunk — caminho já validado na prática pela Fase 0 (existe um binário de
+  benchmark, `benchmarks/mca-bench`, testado contra um mundo real). `parse_region_coords()`
+  extrai `(region_x, region_z)` do nome do arquivo (`"r.-1.0.mca"` → `(-1, 0)`, cobre
+  coordenadas negativas). `diff_region_chunks(from_bytes, to_bytes, region_x, region_z)` compara
+  os 1024 slots (32×32) entre duas versões dos bytes brutos do arquivo — dois `None` pula; um
+  `None`/um `Some` vira `Added`/`Removed`; dois `Some` com bytes diferentes vira `Changed`;
+  bytes iguais pula — reportando cada diferença em **coordenadas absolutas de chunk no mundo**
+  (`region_x*32 + local_x`), não coordenadas locais à região.
+- **`crates/mcgit-core` ganha `mcgit-world` como dependência**: `blob_contents()` (novo em
+  `git.rs`, `git cat-file -p <ref>:<path>`, bytes crus sem conversão de texto — irmã de
+  `blob_size`, que só precisa do tamanho) busca o conteúdo binário de um arquivo de região em
+  duas branches; `diff_region_chunks(world_dir, from, to, path)` orquestra: extrai o nome do
+  arquivo, resolve as coordenadas da região, busca os bytes dos dois lados, delega o diff pro
+  `mcgit-world`.
+- **Achado técnico de verificação, antes de escrever qualquer teste**: construir uma região
+  válida do zero em memória (pra fixture de teste, sem depender de um arquivo `.mca` real de
+  3.6MB) parecia arriscado — `Region::from_stream` sobre um buffer zerado por fora não é a API
+  pensada pra isso. Conferido no código-fonte do `fastanvil` (não só nos docs): existe
+  `Region::create(stream)`, construtor dedicado exatamente pra esse caso (escreve o cabeçalho de
+  8KB ele mesmo, inicializa o rastreamento de setores livres corretamente — `from_stream` sobre
+  um buffer manualmente zerado deixa esse rastreamento inconsistente, `vec![0]` em vez do
+  `vec![2]` que `create` usa). Usando `Region::create`, os testes com fixtures sintéticas
+  funcionaram de primeira, sem precisar do mundo real como fallback.
+- **Testes**: `mcgit-world` (6) — `parse_region_coords` com coordenadas negativas e nomes
+  inválidos, `diff_region_chunks` reportando chunk adicionado/removido/alterado e ignorando os
+  inalterados, branches idênticas retornando lista vazia. `mcgit-core` (+1, teste de integração
+  de ponta a ponta) — mundo Git de teste com região sintética commitada, editada num chunk só
+  numa branch, `diff_region_chunks` confirmando que só aquele chunk aparece.
+- **Ponte Tauri**: `diff_world_region_chunks` (compara a branch atual contra uma branch
+  informada, pra um `path` de arquivo de região específico).
+- **UI**: dentro da lista de arquivos já mostrada pelo "Compare" (Fase 6), cada linha de arquivo
+  de região modificado (`change.path` começa com `"region/"` e termina em `".mca"`) ganha um
+  botão extra "Show chunks", expandindo inline (sem modal) a lista de chunks alterados —
+  `"(12, -5) changed"` etc., coordenadas absolutas, não locais à região.
+- **Fora de escopo desta fatia**: decodificar block-states/entidades/estruturas de verdade (só
+  "mudou ou não", sem dizer o quê); dimensões Nether/End (`DIM-1/region/`, `DIM1/region/`) e
+  `entities/`/`poi/` (só a pasta `region/` principal); estatísticas por snapshot e visualização
+  gráfica de verdade (os outros 3 itens do checklist da Fase 4).
+
+**Verificado ao vivo pela GUI real** (tela livre): gerado um arquivo de região sintético com dois
+chunks (via um exemplo Rust temporário reaproveitando a própria API pública do `mcgit-world`,
+removido depois do teste), commitado na branch `main`; criada a branch `experiment`, um dos dois
+chunks alterado e commitado lá; de volta em `main`, "Compare" mostrou
+`modified — region/r.0.0.mca — 16.0 KB → 16.0 KB`; "Show chunks" mostrou corretamente
+`(0, 0) changed` como único resultado — o chunk que não mudou não apareceu na lista, confirmando
+o comportamento correto ponta a ponta (Git real + Anvil real + UI real).
+
+---
+
 ## Schema do Banco Local (SQLite) — proposta inicial
 
 ```sql

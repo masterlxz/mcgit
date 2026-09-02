@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAdvancedMode } from "../../context/AdvancedModeContext";
-import type { Branch, FileChange, Snapshot, World } from "../../api/world";
+import type { Branch, ChunkDiff, FileChange, Snapshot, World } from "../../api/world";
 import { SaveSnapshotForm } from "./SaveSnapshotForm";
 import { WorldHistory } from "./WorldHistory";
 import { WorldBranches, type MergeState } from "./WorldBranches";
@@ -10,6 +10,10 @@ type Props = {
   historyByWorld: Record<string, Snapshot[] | undefined>;
   branchesByWorld: Record<string, Branch[] | undefined>;
   diffsByWorld: Record<string, { otherBranch: string; changes: FileChange[] } | undefined>;
+  regionChunkDiffByWorld: Record<
+    string,
+    { otherBranch: string; path: string; chunks: ChunkDiff[] } | undefined
+  >;
   mergeStateByWorld: Record<string, MergeState | undefined>;
   onToggleVersioning: (folderName: string, enable: boolean) => void;
   onSaveSnapshot: (folderName: string, message: string) => void;
@@ -20,6 +24,7 @@ type Props = {
   onCreateBranch: (folderName: string, name: string) => void;
   onSwitchBranch: (folderName: string, name: string) => void;
   onCompareBranch: (folderName: string, otherBranch: string) => void;
+  onShowRegionChunks: (folderName: string, otherBranch: string, path: string) => void;
   onPreviewMerge: (folderName: string, otherBranch: string) => void;
   onCancelMergePreview: (folderName: string) => void;
   onMerge: (folderName: string, otherBranch: string) => void;
@@ -33,6 +38,7 @@ export function WorldList({
   historyByWorld,
   branchesByWorld,
   diffsByWorld,
+  regionChunkDiffByWorld,
   mergeStateByWorld,
   onToggleVersioning,
   onSaveSnapshot,
@@ -43,6 +49,7 @@ export function WorldList({
   onCreateBranch,
   onSwitchBranch,
   onCompareBranch,
+  onShowRegionChunks,
   onPreviewMerge,
   onCancelMergePreview,
   onMerge,
@@ -114,10 +121,14 @@ export function WorldList({
                     <WorldBranches
                       branches={branchesByWorld[world.folder_name] ?? []}
                       diff={diffsByWorld[world.folder_name]}
+                      regionChunkDiff={regionChunkDiffByWorld[world.folder_name]}
                       mergeState={mergeStateByWorld[world.folder_name]}
                       onCreate={(name) => onCreateBranch(world.folder_name, name)}
                       onSwitch={(name) => onSwitchBranch(world.folder_name, name)}
                       onCompare={(name) => onCompareBranch(world.folder_name, name)}
+                      onShowRegionChunks={(otherBranch, path) =>
+                        onShowRegionChunks(world.folder_name, otherBranch, path)
+                      }
                       onPreviewMerge={(name) => onPreviewMerge(world.folder_name, name)}
                       onCancelMergePreview={() => onCancelMergePreview(world.folder_name)}
                       onMerge={(name) => onMerge(world.folder_name, name)}

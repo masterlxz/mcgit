@@ -135,3 +135,18 @@ export function finishWorldMerge(
 export function abortWorldMerge(instanceId: number, folderName: string): Promise<void> {
   return invoke("abort_world_merge", { instanceId, folderName });
 }
+
+export type ChunkDiff = {
+  chunk_x: number;
+  chunk_z: number;
+  status: "added" | "removed" | "changed";
+};
+
+export function diffWorldRegionChunks(
+  instanceId: number,
+  folderName: string,
+  otherBranch: string,
+  path: string,
+): Promise<ChunkDiff[]> {
+  return invoke("diff_world_region_chunks", { instanceId, folderName, otherBranch, path });
+}

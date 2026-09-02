@@ -7,6 +7,7 @@ import {
   createWorldSnapshot,
   deleteWorldSnapshot,
   diffWorldBranches,
+  diffWorldRegionChunks,
   disableWorldVersioning,
   enableWorldVersioning,
   finishWorldMerge,
@@ -19,6 +20,7 @@ import {
   restoreWorldVersion,
   switchWorldBranch,
   type Branch,
+  type ChunkDiff,
   type FileChange,
   type Snapshot,
   type World,
@@ -38,6 +40,9 @@ export function InstanceDetailScreen() {
     Record<string, { otherBranch: string; changes: FileChange[] } | undefined>
   >({});
   const [mergeStateByWorld, setMergeStateByWorld] = useState<Record<string, MergeState | undefined>>({});
+  const [regionChunkDiffByWorld, setRegionChunkDiffByWorld] = useState<
+    Record<string, { otherBranch: string; path: string; chunks: ChunkDiff[] } | undefined>
+  >({});
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -159,6 +164,7 @@ export function InstanceDetailScreen() {
       // preview (computed against the old current branch) is no longer
       // meaningful.
       setDiffsByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setRegionChunkDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
       setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
     } catch (err) {
       setError(String(err));
@@ -185,6 +191,7 @@ export function InstanceDetailScreen() {
       // preview (computed against the old current branch) is no longer
       // meaningful.
       setDiffsByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setRegionChunkDiffByWorld((prev) => ({ ...prev, [folderName]: undefined }));
       setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
     } catch (err) {
       setError(String(err));
@@ -196,6 +203,16 @@ export function InstanceDetailScreen() {
     try {
       const changes = await diffWorldBranches(instanceId, folderName, otherBranch);
       setDiffsByWorld((prev) => ({ ...prev, [folderName]: { otherBranch, changes } }));
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleShowRegionChunks(folderName: string, otherBranch: string, path: string) {
+    setError(null);
+    try {
+      const chunks = await diffWorldRegionChunks(instanceId, folderName, otherBranch, path);
+      setRegionChunkDiffByWorld((prev) => ({ ...prev, [folderName]: { otherBranch, path, chunks } }));
     } catch (err) {
       setError(String(err));
     }
@@ -309,6 +326,7 @@ export function InstanceDetailScreen() {
         historyByWorld={historyByWorld}
         branchesByWorld={branchesByWorld}
         diffsByWorld={diffsByWorld}
+        regionChunkDiffByWorld={regionChunkDiffByWorld}
         mergeStateByWorld={mergeStateByWorld}
         onToggleVersioning={handleToggleVersioning}
         onSaveSnapshot={handleSaveSnapshot}
@@ -319,6 +337,7 @@ export function InstanceDetailScreen() {
         onCreateBranch={handleCreateBranch}
         onSwitchBranch={handleSwitchBranch}
         onCompareBranch={handleCompareBranch}
+        onShowRegionChunks={handleShowRegionChunks}
         onPreviewMerge={handlePreviewMerge}
         onCancelMergePreview={handleCancelMergePreview}
         onMerge={handleMerge}

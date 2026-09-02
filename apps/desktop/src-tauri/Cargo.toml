@@ -28,5 +28,6 @@ mcgit-db = { path = "../../../crates/mcgit-db" }
 mcgit-minecraft = { path = "../../../crates/mcgit-minecraft" }
 mcgit-instance = { path = "../../../crates/mcgit-instance" }
 mcgit-core = { path = "../../../crates/mcgit-core" }
+mcgit-world = { path = "../../../crates/mcgit-world" }
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "stream"] }
 

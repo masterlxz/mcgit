@@ -401,6 +401,46 @@ fn blob_size(world_dir: &Path, git_ref: &str, path: &str) -> Result<u64, GitErro
         .map_err(|_| GitError::CommandFailed(format!("unexpected `git cat-file -s` output for {path}")))
 }
 
+/// The raw bytes of `path` as it exists at `git_ref`, via
+/// `git cat-file -p <git_ref>:<path>` — unlike `blob_size`, this is used
+/// when the actual binary content is needed (e.g. to parse a region file),
+/// so no text conversion is applied to the output.
+fn blob_contents(world_dir: &Path, git_ref: &str, path: &str) -> Result<Vec<u8>, GitError> {
+    let output = Command::new("git")
+        .args(["cat-file", "-p", &format!("{git_ref}:{path}")])
+        .current_dir(world_dir)
+        .output()
+        .map_err(|e| GitError::Spawn(e.to_string()))?;
+
+    if !output.status.success() {
+        return Err(GitError::CommandFailed(
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        ));
+    }
+    Ok(output.stdout)
+}
+
+/// Diffs the chunks of a region file (`path`, e.g. `"region/r.0.0.mca"`)
+/// between `from` and `to` — which 16×16 chunks were added, removed, or
+/// changed, at their absolute world coordinates. See `mcgit_world` for what
+/// "changed" means here (byte-level, not content-aware yet).
+pub fn diff_region_chunks(
+    world_dir: &Path,
+    from: &str,
+    to: &str,
+    path: &str,
+) -> Result<Vec<mcgit_world::ChunkDiff>, GitError> {
+    let filename = path.rsplit('/').next().unwrap_or(path);
+    let (region_x, region_z) = mcgit_world::parse_region_coords(filename)
+        .ok_or_else(|| GitError::CommandFailed(format!("not a region file path: {path}")))?;
+
+    let from_bytes = blob_contents(world_dir, from, path)?;
+    let to_bytes = blob_contents(world_dir, to, path)?;
+
+    mcgit_world::diff_region_chunks(&from_bytes, &to_bytes, region_x, region_z)
+        .map_err(|e| GitError::CommandFailed(e.to_string()))
+}
+
 /// Lists every file that differs between `from` and `to`, with its size on
 /// each side. File-level only — see `FileChange` for why there's no content
 /// diff here.
@@ -1483,5 +1523,47 @@ mod tests {
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert_eq!(content, b"changed-on-main", "must match the pre-merge state exactly");
         assert!(!still_in_progress);
+    }
+
+    /// Builds a valid, minimal region file (via `fastanvil::Region::create`)
+    /// with the given (local x, local z, marker) chunks written into it.
+    fn build_region_bytes(chunks: &[(usize, usize, i64)]) -> Vec<u8> {
+        use std::collections::HashMap;
+        use std::io::Cursor;
+
+        let mut region = fastanvil::Region::create(Cursor::new(Vec::new())).unwrap();
+        for &(x, z, marker) in chunks {
+            let mut map = HashMap::new();
+            map.insert("InhabitedTime".to_string(), fastnbt::Value::Long(marker));
+            let bytes = fastnbt::to_bytes(&fastnbt::Value::Compound(map)).unwrap();
+            region.write_chunk(x, z, &bytes).unwrap();
+        }
+        region.into_inner().unwrap().into_inner()
+    }
+
+    #[test]
+    fn diff_region_chunks_reports_only_the_chunk_that_actually_changed() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-region-diff-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        std::fs::create_dir_all(world_dir.join("region")).unwrap();
+        init(&world_dir).unwrap();
+
+        let base = build_region_bytes(&[(0, 0, 1), (5, 5, 1)]);
+        std::fs::write(world_dir.join("region").join("r.0.0.mca"), &base).unwrap();
+        commit(&world_dir, "Base region").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+
+        let changed = build_region_bytes(&[(0, 0, 2), (5, 5, 1)]);
+        std::fs::write(world_dir.join("region").join("r.0.0.mca"), &changed).unwrap();
+        commit(&world_dir, "Change chunk (0,0)").unwrap();
+
+        let diffs = diff_region_chunks(&world_dir, &main, "experiment", "region/r.0.0.mca").unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(diffs[0].chunk_x, 0);
+        assert_eq!(diffs[0].chunk_z, 0);
+        assert_eq!(diffs[0].status, mcgit_world::ChunkStatus::Changed);
     }
 }

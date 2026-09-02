@@ -5,3 +5,8 @@ edition = "2024"
 
 [dependencies]
 thiserror = "2.0.20"
+mcgit-world = { path = "../mcgit-world" }
+
+[dev-dependencies]
+fastanvil = "0.32.0"
+fastnbt = "2.6.3"

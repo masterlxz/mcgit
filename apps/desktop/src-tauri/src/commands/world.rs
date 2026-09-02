@@ -535,3 +535,52 @@ pub async fn abort_world_merge(
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ChunkDiffDto {
+    pub chunk_x: i32,
+    pub chunk_z: i32,
+    pub status: String,
+}
+
+impl From<mcgit_world::ChunkDiff> for ChunkDiffDto {
+    fn from(diff: mcgit_world::ChunkDiff) -> Self {
+        let status = match diff.status {
+            mcgit_world::ChunkStatus::Added => "added",
+            mcgit_world::ChunkStatus::Removed => "removed",
+            mcgit_world::ChunkStatus::Changed => "changed",
+        };
+        ChunkDiffDto {
+            chunk_x: diff.chunk_x,
+            chunk_z: diff.chunk_z,
+            status: status.to_string(),
+        }
+    }
+}
+
+/// Diffs the chunks of a region file between the world's current branch and
+/// `other_branch` — which 16×16 chunks were added, removed, or changed, at
+/// their absolute world coordinates. Byte-level only, no content diff.
+#[tauri::command]
+pub async fn diff_world_region_chunks(
+    instance_id: i64,
+    folder_name: String,
+    other_branch: String,
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ChunkDiffDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    let diffs = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        let current = mcgit_core::git::current_branch(&world_dir)?;
+        mcgit_core::git::diff_region_chunks(&world_dir, &current, &other_branch, &path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(diffs.into_iter().map(ChunkDiffDto::from).collect())
+}

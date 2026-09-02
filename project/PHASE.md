@@ -290,10 +290,25 @@ garantir que a base de versionamento é sólida antes de expandir pra mods/modpa
 
 Antiga "Fase 3 — Minecraft-aware" do mcgit-ferramenta (v1.0).
 
-- [ ] Parser NBT completo (reaproveitar aprendizado da Fase 0)
-- [ ] Diff específico de regiões/blocos/entidades/estruturas entre dois snapshots
+- [~] Diff específico de regiões/blocos/entidades/estruturas entre dois snapshots — primeira
+  fatia implementada (Sessão 8, quinta continuação, 2026-09-01): **diff por chunk** entre duas
+  branches, escolhida com o usuário por atacar direto o problema de granularidade achado na
+  investigação de merge da Fase 6. Novo crate `mcgit-world` (pure lib, zero conhecimento de
+  Git), usando `fastanvil` 0.32 (já validado na prática pela Fase 0) — pra um arquivo de região
+  `.mca` marcado como "modified" na comparação da Fase 6, mostra quais chunks (16×16 blocos, em
+  coordenadas absolutas do mundo) especificamente mudaram, por comparação de bytes do NBT
+  descomprimido de cada chunk — sem decodificar block-states ainda (isso é o próximo passo,
+  "Parser NBT completo" abaixo). Ainda não cobre entidades/estruturas nem as dimensões
+  Nether/End (só a pasta `region/` principal). Verificado ao vivo pela GUI real (tela livre):
+  duas branches com um arquivo de região sintético editado num chunk só, comparação mostrando
+  corretamente `(0, 0) changed` e nada mais. Detalhes completos em `ARCHITECTURE.md` §Fase 4.
+- [ ] Parser NBT completo (reaproveitar aprendizado da Fase 0) — próximo passo natural: hoje o
+  diff por chunk só compara bytes brutos, sem entender o conteúdo; decodificar de verdade
+  (block-states, entidades) é o que falta pra ir além de "mudou ou não".
 - [ ] Estatísticas de mundo por snapshot (blocos, entidades, estruturas)
-- [ ] Visualização de alterações entre snapshots (na GUI)
+- [ ] Visualização de alterações entre snapshots (na GUI) — já existe uma versão mínima (lista
+  textual de chunks alterados na tela de comparação de branches); uma visualização de verdade
+  (mapa, destaque visual) ainda não foi feita.
 
 ---
 

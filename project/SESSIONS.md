@@ -958,3 +958,42 @@ natural da trilha priorizada: Fase 2 (qualidade do versionamento — auto-snapsh
 Fase 4 (diff Minecraft-aware entre snapshots), a critério do usuário. Game Runner e login
 Microsoft seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue
 em aberto, não urgente.
+
+---
+
+## Sessão 8 (quinta continuação) — 2026-09-01 — Fase 4: diff por chunk
+
+Usuário escolheu Fase 4 (diff Minecraft-aware) como próxima frente, e dentro dela a fatia "diff
+por chunk" — escolhida por atacar direto o problema de granularidade achado na investigação de
+merge da sessão anterior (hoje um conflito descarta a região `.mca` inteira; mostrar quais
+chunks realmente mudaram é o primeiro passo pra melhorar isso, embora reconciliar de verdade
+ainda dependa de decodificar NBT/block-states, fora do escopo desta leva).
+
+Novo crate `mcgit-world` (pure lib, zero conhecimento de Git) usando `fastanvil` — caminho já
+validado na prática pela Fase 0 (`benchmarks/mca-bench`, testado contra um mundo real). Antes de
+escrever qualquer teste, verificado no código-fonte do `fastanvil` (não só nos docs) que
+`Region::create` é o construtor certo pra montar uma região válida do zero em memória (fixture
+sintética, sem depender do mundo real de 3.6MB) — `from_stream` sobre um buffer manualmente
+zerado deixaria o rastreamento de setores livres inconsistente. `mcgit-core` ganha
+`blob_contents` (bytes crus via `git cat-file -p`, irmã de `blob_size`) e `diff_region_chunks`
+(orquestra: resolve coordenadas da região pelo nome do arquivo, busca bytes dos dois lados,
+delega o diff pro `mcgit-world`). 6 testes novos no `mcgit-world` + 1 de integração no
+`mcgit-core`. Ponte Tauri com `diff_world_region_chunks`; UI acrescenta um botão "Show chunks"
+na lista de comparação já existente (Fase 6), só pra arquivos de região modificados.
+
+Tela livre durante a sessão, verificação ao vivo pela GUI real feita de ponta a ponta: um
+arquivo de região sintético gerado com dois chunks (via um exemplo Rust temporário, removido
+depois de usar), um chunk editado numa branch, comparação confirmando `modified — region/
+r.0.0.mca` e "Show chunks" mostrando corretamente só `(0, 0) changed` — o chunk que não mudou
+não apareceu.
+
+Detalhes completos em `ARCHITECTURE.md` §Fase 4 (subseção "Diff por chunk"); checklist
+atualizado em `PHASE.md` Fase 4 (item de diff marcado `[~]` — primeira fatia feita, resto do
+checklist ainda aberto).
+
+**Estado ao final da sessão**: primeira fatia da Fase 4 implementada e verificada ao vivo. Resta
+o parser NBT completo (decodificar block-states de verdade), estatísticas por snapshot, e
+visualização gráfica — próximos passos naturais dessa mesma fase, ou virar pra Fase 2
+(auto-snapshot/auto-gc) se o usuário preferir. Game Runner e login Microsoft seguem
+pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não
+urgente.

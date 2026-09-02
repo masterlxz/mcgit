@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Branch, ConflictedFile, FileChange } from "../../api/world";
+import type { Branch, ChunkDiff, ConflictedFile, FileChange } from "../../api/world";
 
 export type MergeState =
   | { phase: "preview"; otherBranch: string; conflictingFiles: string[] }
@@ -8,10 +8,12 @@ export type MergeState =
 type Props = {
   branches: Branch[];
   diff: { otherBranch: string; changes: FileChange[] } | undefined;
+  regionChunkDiff: { otherBranch: string; path: string; chunks: ChunkDiff[] } | undefined;
   mergeState: MergeState | undefined;
   onCreate: (name: string) => void;
   onSwitch: (name: string) => void;
   onCompare: (name: string) => void;
+  onShowRegionChunks: (otherBranch: string, path: string) => void;
   onPreviewMerge: (name: string) => void;
   onCancelMergePreview: () => void;
   onMerge: (name: string) => void;
@@ -19,6 +21,14 @@ type Props = {
   onFinishMerge: () => void;
   onAbortMerge: () => void;
 };
+
+function isRegionFile(path: string): boolean {
+  return path.startsWith("region/") && path.endsWith(".mca");
+}
+
+function describeChunkDiff(chunk: ChunkDiff): string {
+  return `(${chunk.chunk_x}, ${chunk.chunk_z}) ${chunk.status}`;
+}
 
 function formatSize(bytes: number | null): string {
   if (bytes === null) return "";
@@ -51,10 +61,12 @@ function describeConflictKind(kind: ConflictedFile["kind"]): string {
 export function WorldBranches({
   branches,
   diff,
+  regionChunkDiff,
   mergeState,
   onCreate,
   onSwitch,
   onCompare,
+  onShowRegionChunks,
   onPreviewMerge,
   onCancelMergePreview,
   onMerge,
@@ -65,6 +77,7 @@ export function WorldBranches({
   const [newBranchName, setNewBranchName] = useState("");
   const [confirmingSwitchFor, setConfirmingSwitchFor] = useState<string | null>(null);
   const [openDiffFor, setOpenDiffFor] = useState<string | null>(null);
+  const [openChunksFor, setOpenChunksFor] = useState<string | null>(null);
 
   function toggleDiff(name: string) {
     if (openDiffFor === name) {
@@ -72,6 +85,15 @@ export function WorldBranches({
     } else {
       setOpenDiffFor(name);
       onCompare(name);
+    }
+  }
+
+  function toggleChunks(otherBranch: string, path: string) {
+    if (openChunksFor === path) {
+      setOpenChunksFor(null);
+    } else {
+      setOpenChunksFor(path);
+      onShowRegionChunks(otherBranch, path);
     }
   }
 
@@ -137,6 +159,34 @@ export function WorldBranches({
                   diff.changes.map((change) => (
                     <li key={change.path}>
                       {change.status} — {change.path} — {describeChange(change)}
+                      {change.status === "modified" && isRegionFile(change.path) && (
+                        <>
+                          {" "}
+                          <button onClick={() => toggleChunks(branch.name, change.path)}>
+                            {openChunksFor === change.path ? "Hide chunks" : "Show chunks"}
+                          </button>
+                          {openChunksFor === change.path && (
+                            <ul>
+                              {regionChunkDiff &&
+                                regionChunkDiff.otherBranch === branch.name &&
+                                regionChunkDiff.path === change.path &&
+                                regionChunkDiff.chunks.length === 0 && (
+                                  <li>
+                                    <em>No chunks differ (only metadata changed).</em>
+                                  </li>
+                                )}
+                              {regionChunkDiff &&
+                                regionChunkDiff.otherBranch === branch.name &&
+                                regionChunkDiff.path === change.path &&
+                                regionChunkDiff.chunks.map((chunk) => (
+                                  <li key={`${chunk.chunk_x},${chunk.chunk_z}`}>
+                                    {describeChunkDiff(chunk)}
+                                  </li>
+                                ))}
+                            </ul>
+                          )}
+                        </>
+                      )}
                     </li>
                   ))}
               </ul>
