@@ -60,6 +60,11 @@ pub fn run() {
             commands::world::create_world_branch,
             commands::world::switch_world_branch,
             commands::world::diff_world_branches,
+            commands::world::preview_world_merge,
+            commands::world::merge_world_branch,
+            commands::world::resolve_world_merge_conflict,
+            commands::world::finish_world_merge,
+            commands::world::abort_world_merge,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

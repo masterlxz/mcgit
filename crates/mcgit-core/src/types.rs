@@ -39,3 +39,15 @@ pub enum BranchError {
     #[error("could not check whether the world is open: {0}")]
     Io(#[from] std::io::Error),
 }
+
+#[derive(Debug, Error)]
+pub enum MergeError {
+    #[error("this world appears to be open in Minecraft right now — close it before merging")]
+    WorldCurrentlyOpen,
+    #[error("a merge is already in progress for this world — finish or abort it first")]
+    AlreadyInProgress,
+    #[error(transparent)]
+    Git(#[from] GitError),
+    #[error("could not check whether the world is open: {0}")]
+    Io(#[from] std::io::Error),
+}

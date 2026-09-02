@@ -375,7 +375,47 @@ mcgit checkout main
   `deleted — r.0.0.mca — deleted, was 31 bytes`; painel de branches e de comparação atualizando
   sozinhos após snapshot novo; comparação limpa corretamente depois de trocar de branch de volta
   pra "main". Detalhes completos em `ARCHITECTURE.md` §Git Engine.
-- [ ] Investigar se/como merge faz sentido tecnicamente para arquivos de mundo (não assumir que é seguro — ver `ARCHITECTURE.md`)
+- [x] Investigar se/como merge faz sentido tecnicamente para arquivos de mundo, feito (Sessão 8,
+  continuação, 2026-09-01) — 5 experimentos reais num repositório Git descartável (mesmo método
+  usado antes do `delete_snapshot`), não só análise teórica, mais um sexto experimento adicional
+  feito depois de o usuário questionar diretamente a conclusão inicial. **Resultado: merge
+  tradicional do Git nunca corrompe nem perde dado silenciosamente (desde que a UI nunca tente
+  resolver conflito de conteúdo sozinha — o próprio Git já se recusa a fazer isso e nunca injeta
+  marcadores dentro de um arquivo binário), mas a granularidade do conflito é o arquivo inteiro
+  (uma região `.mca` = 512×512 blocos), não o chunk/bloco que realmente mudou** — confirmado com
+  duas mudanças sem NENHUMA sobreposição real, em pontas opostas do mesmo arquivo simulando uma
+  região: ainda assim conflito no arquivo inteiro, forçando escolher a região inteira de uma
+  branch ou da outra e descartando a outra por completo. Isso significa que cenários realistas
+  (casa construída na main, mob quebra um bloco em outro canto da mesma região na branch) forçam
+  uma escolha tudo-ou-nada mesmo sem sobreposição de intenção nenhuma — resolver isso de verdade
+  exige entender o formato Anvil/NBT por dentro, trabalho da Fase 4 (Minecraft-Aware World
+  Diffing), não algo que a Fase 6 (Git puro) resolve sozinha.
+  Confirmado o contraste com arquivo texto puro (marcadores `<<<<<<<` escritos literalmente
+  dentro do arquivo, ao contrário do binário); arquivos diferentes alterados em cada branch, ou
+  mesmo arquivo com resultado idêntico nos dois lados, ainda fazem merge automático limpo;
+  conflito de conteúdo e de modify/delete são detectados com clareza, o arquivo original fica
+  intacto no disco, as duas versões continuam recuperáveis via `git ls-files -u`, e
+  `git merge --abort` desfaz tudo de forma limpa. `git merge-tree --write-tree` (Git ≥ 2.38)
+  permite pré-visualizar se um merge vai conflitar sem tocar a árvore de trabalho — útil pra um
+  futuro "essas N regiões vão conflitar, escolher uma versão inteira de cada?" antes de qualquer
+  coisa mudar de verdade. Desenho de resolução (escolher "esta versão" ou "a outra" por arquivo
+  inteiro, via `checkout --ours`/`--theirs` + `add`/`rm` + `commit`, com aviso explícito de
+  granularidade na UI) virou código de verdade ainda na mesma sessão — ver logo abaixo.
+- [x] **Merge entre branches**, implementado (Sessão 8, continuação, 2026-09-01), fechando o
+  ciclo completo do Git Engine puro. `git.rs` ganha `preview_merge`/`list_merge_conflicts`/
+  `merge_branch`/`resolve_conflict`/`finish_merge`/`abort_merge`, com guardas de mundo aberto e
+  de merge já em andamento (`MergeError`). Botão "Merge" por branch na UI, com preview mostrando
+  a lista real de arquivos que vão conflitar e o aviso de granularidade por extenso antes de
+  qualquer coisa mudar de verdade; resolução por arquivo inteiro ("Keep this branch's version"/
+  "Keep the other branch's version"), "Abort merge" sempre disponível. 9 testes novos (41/41 no
+  crate). **Verificado ao vivo pela GUI real**: conflito real criado e resolvido com sucesso
+  (commit de merge de 2 pais confirmado no `git log`), e um segundo conflito criado e abortado
+  (estado restaurado exatamente ao de antes, conferido no disco). Detalhes completos em
+  `ARCHITECTURE.md` §Git Engine (subseções "Investigação: merge entre branches" e "Merge entre
+  branches — implementado").
+
+**Fase 6 completa**: os 3 itens (criar/trocar branch, comparar, merge) estão implementados e
+verificados ao vivo.
 
 ---
 

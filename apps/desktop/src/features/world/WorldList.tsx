@@ -3,13 +3,14 @@ import { useAdvancedMode } from "../../context/AdvancedModeContext";
 import type { Branch, FileChange, Snapshot, World } from "../../api/world";
 import { SaveSnapshotForm } from "./SaveSnapshotForm";
 import { WorldHistory } from "./WorldHistory";
-import { WorldBranches } from "./WorldBranches";
+import { WorldBranches, type MergeState } from "./WorldBranches";
 
 type Props = {
   worlds: World[];
   historyByWorld: Record<string, Snapshot[] | undefined>;
   branchesByWorld: Record<string, Branch[] | undefined>;
   diffsByWorld: Record<string, { otherBranch: string; changes: FileChange[] } | undefined>;
+  mergeStateByWorld: Record<string, MergeState | undefined>;
   onToggleVersioning: (folderName: string, enable: boolean) => void;
   onSaveSnapshot: (folderName: string, message: string) => void;
   onShowHistory: (folderName: string) => void;
@@ -19,6 +20,12 @@ type Props = {
   onCreateBranch: (folderName: string, name: string) => void;
   onSwitchBranch: (folderName: string, name: string) => void;
   onCompareBranch: (folderName: string, otherBranch: string) => void;
+  onPreviewMerge: (folderName: string, otherBranch: string) => void;
+  onCancelMergePreview: (folderName: string) => void;
+  onMerge: (folderName: string, otherBranch: string) => void;
+  onResolveConflict: (folderName: string, path: string, keep: "ours" | "theirs") => void;
+  onFinishMerge: (folderName: string) => void;
+  onAbortMerge: (folderName: string) => void;
 };
 
 export function WorldList({
@@ -26,6 +33,7 @@ export function WorldList({
   historyByWorld,
   branchesByWorld,
   diffsByWorld,
+  mergeStateByWorld,
   onToggleVersioning,
   onSaveSnapshot,
   onShowHistory,
@@ -35,6 +43,12 @@ export function WorldList({
   onCreateBranch,
   onSwitchBranch,
   onCompareBranch,
+  onPreviewMerge,
+  onCancelMergePreview,
+  onMerge,
+  onResolveConflict,
+  onFinishMerge,
+  onAbortMerge,
 }: Props) {
   const [openHistoryFor, setOpenHistoryFor] = useState<Set<string>>(new Set());
   const [openBranchesFor, setOpenBranchesFor] = useState<Set<string>>(new Set());
@@ -100,9 +114,18 @@ export function WorldList({
                     <WorldBranches
                       branches={branchesByWorld[world.folder_name] ?? []}
                       diff={diffsByWorld[world.folder_name]}
+                      mergeState={mergeStateByWorld[world.folder_name]}
                       onCreate={(name) => onCreateBranch(world.folder_name, name)}
                       onSwitch={(name) => onSwitchBranch(world.folder_name, name)}
                       onCompare={(name) => onCompareBranch(world.folder_name, name)}
+                      onPreviewMerge={(name) => onPreviewMerge(world.folder_name, name)}
+                      onCancelMergePreview={() => onCancelMergePreview(world.folder_name)}
+                      onMerge={(name) => onMerge(world.folder_name, name)}
+                      onResolveConflict={(path, keep) =>
+                        onResolveConflict(world.folder_name, path, keep)
+                      }
+                      onFinishMerge={() => onFinishMerge(world.folder_name)}
+                      onAbortMerge={() => onAbortMerge(world.folder_name)}
                     />
                   )}
                 </>

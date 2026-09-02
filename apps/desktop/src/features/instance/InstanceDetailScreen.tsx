@@ -2,15 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { listInstances, type Instance } from "../../api/instance";
 import {
+  abortWorldMerge,
   createWorldBranch,
   createWorldSnapshot,
   deleteWorldSnapshot,
   diffWorldBranches,
   disableWorldVersioning,
   enableWorldVersioning,
+  finishWorldMerge,
   listWorldBranches,
   listWorldHistory,
   listWorlds,
+  mergeWorldBranch,
+  previewWorldMerge,
+  resolveWorldMergeConflict,
   restoreWorldVersion,
   switchWorldBranch,
   type Branch,
@@ -19,6 +24,7 @@ import {
   type World,
 } from "../../api/world";
 import { WorldList } from "../world/WorldList";
+import type { MergeState } from "../world/WorldBranches";
 
 export function InstanceDetailScreen() {
   const { id } = useParams<{ id: string }>();
@@ -31,6 +37,7 @@ export function InstanceDetailScreen() {
   const [diffsByWorld, setDiffsByWorld] = useState<
     Record<string, { otherBranch: string; changes: FileChange[] } | undefined>
   >({});
+  const [mergeStateByWorld, setMergeStateByWorld] = useState<Record<string, MergeState | undefined>>({});
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -148,9 +155,11 @@ export function InstanceDetailScreen() {
       const branches = await createWorldBranch(instanceId, folderName, name);
       setBranchesByWorld((prev) => ({ ...prev, [folderName]: branches }));
       setStatus(`Created and switched to branch "${name}".`);
-      // The current branch just changed, so any open comparison (computed
-      // against the old current branch) is no longer meaningful.
+      // The current branch just changed, so any open comparison or merge
+      // preview (computed against the old current branch) is no longer
+      // meaningful.
       setDiffsByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
     } catch (err) {
       setError(String(err));
     }
@@ -172,9 +181,11 @@ export function InstanceDetailScreen() {
       if (historyByWorld[folderName] !== undefined) {
         await handleShowHistory(folderName);
       }
-      // The current branch just changed, so any open comparison (computed
-      // against the old current branch) is no longer meaningful.
+      // The current branch just changed, so any open comparison or merge
+      // preview (computed against the old current branch) is no longer
+      // meaningful.
       setDiffsByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
     } catch (err) {
       setError(String(err));
     }
@@ -185,6 +196,99 @@ export function InstanceDetailScreen() {
     try {
       const changes = await diffWorldBranches(instanceId, folderName, otherBranch);
       setDiffsByWorld((prev) => ({ ...prev, [folderName]: { otherBranch, changes } }));
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handlePreviewMerge(folderName: string, otherBranch: string) {
+    setError(null);
+    try {
+      const conflictingFiles = await previewWorldMerge(instanceId, folderName, otherBranch);
+      setMergeStateByWorld((prev) => ({
+        ...prev,
+        [folderName]: { phase: "preview", otherBranch, conflictingFiles },
+      }));
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  function handleCancelMergePreview(folderName: string) {
+    setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+  }
+
+  async function handleMerge(folderName: string, otherBranch: string) {
+    setError(null);
+    setStatus(null);
+    try {
+      const outcome = await mergeWorldBranch(instanceId, folderName, otherBranch);
+      if (outcome.kind === "Merged") {
+        setStatus(`Merged "${otherBranch}".`);
+        setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+        await handleShowBranches(folderName);
+        if (historyByWorld[folderName] !== undefined) {
+          await handleShowHistory(folderName);
+        }
+      } else {
+        setStatus(
+          `${outcome.conflicts.length} file${outcome.conflicts.length === 1 ? "" : "s"} need to be resolved before the merge can finish.`,
+        );
+        setMergeStateByWorld((prev) => ({
+          ...prev,
+          [folderName]: { phase: "resolving", otherBranch, conflicts: outcome.conflicts },
+        }));
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleResolveConflict(folderName: string, path: string, keep: "ours" | "theirs") {
+    setError(null);
+    try {
+      await resolveWorldMergeConflict(instanceId, folderName, path, keep);
+      setMergeStateByWorld((prev) => {
+        const state = prev[folderName];
+        if (!state || state.phase !== "resolving") return prev;
+        return {
+          ...prev,
+          [folderName]: {
+            ...state,
+            conflicts: state.conflicts.filter((c) => c.path !== path),
+          },
+        };
+      });
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleFinishMerge(folderName: string) {
+    setError(null);
+    setStatus(null);
+    const state = mergeStateByWorld[folderName];
+    if (!state) return;
+    try {
+      await finishWorldMerge(instanceId, folderName, `Merge branch '${state.otherBranch}'`);
+      setStatus(`Merged "${state.otherBranch}".`);
+      setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
+      await handleShowBranches(folderName);
+      if (historyByWorld[folderName] !== undefined) {
+        await handleShowHistory(folderName);
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleAbortMerge(folderName: string) {
+    setError(null);
+    setStatus(null);
+    try {
+      await abortWorldMerge(instanceId, folderName);
+      setStatus("Merge aborted — the world is back to how it was before.");
+      setMergeStateByWorld((prev) => ({ ...prev, [folderName]: undefined }));
     } catch (err) {
       setError(String(err));
     }
@@ -205,6 +309,7 @@ export function InstanceDetailScreen() {
         historyByWorld={historyByWorld}
         branchesByWorld={branchesByWorld}
         diffsByWorld={diffsByWorld}
+        mergeStateByWorld={mergeStateByWorld}
         onToggleVersioning={handleToggleVersioning}
         onSaveSnapshot={handleSaveSnapshot}
         onShowHistory={handleShowHistory}
@@ -214,6 +319,12 @@ export function InstanceDetailScreen() {
         onCreateBranch={handleCreateBranch}
         onSwitchBranch={handleSwitchBranch}
         onCompareBranch={handleCompareBranch}
+        onPreviewMerge={handlePreviewMerge}
+        onCancelMergePreview={handleCancelMergePreview}
+        onMerge={handleMerge}
+        onResolveConflict={handleResolveConflict}
+        onFinishMerge={handleFinishMerge}
+        onAbortMerge={handleAbortMerge}
       />
     </section>
   );

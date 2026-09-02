@@ -71,7 +71,7 @@ mcgit/
 | Uso do Git (dentro do Git Engine) | Chamar o binário `git` do sistema vs biblioteca (`git2`/libgit2 em Rust) vs implementação própria mínima | **Binário `git` via subprocess** ✓ (decidido por análise, Sessão 1; primeira vez exercitada com código real na Sessão 4, 2026-08-22 — `git::init` via `std::process::Command`) — mais simples, sem custo de build/linking cross-platform de uma lib C |
 | Estratégia de armazenamento de `.mca` | Git puro vs Git LFS vs camada própria por região/chunk antes do Git | **Git puro, sem LFS no MVP** ✓ (decidido por análise, Sessão 1) — benchmark já mostra Git puro + `git gc` resolvendo o caso comum; LFS adicionaria uma dependência de servidor que não se justifica ainda. Reabrir se um mundo real em produção mostrar o contrário |
 | Compactação do repositório (`git gc`) | Depender do auto-gc padrão do Git vs o mcgit disparar `git gc`/repack periodicamente por conta própria | **mcgit dispara `git gc` por conta própria** ✓ (decidido, Sessão 1) — sem compactar, o `.git` cresce ~5.3M por snapshot mesmo mudando só 2-3 chunks de 960; com `git gc --aggressive`, 7 snapshots ficaram do tamanho de ~1 |
-| Merge entre branches de mundo | Merge tradicional do Git vs não suportar merge (só criar/descartar branch) | **Em aberto** — não assumir que merge tradicional é seguro para arquivos de mundo |
+| Merge entre branches de mundo | Merge tradicional do Git vs não suportar merge (só criar/descartar branch) | **Investigado — seguro contra corrupção/perda silenciosa, mas granularidade grosseira** ✓ (Sessão 8, continuação, 2026-09-01) — o Git nunca corrompe nem perde dado sem avisar, mas o conflito é por **arquivo inteiro** (uma região `.mca` = 512×512 blocos), não por chunk/bloco: duas mudanças sem nenhuma sobreposição real dentro da mesma região ainda assim forçam escolher uma versão inteira da região, descartando a outra por completo. Resolver isso de verdade (por chunk) é trabalho da Fase 4. Ver §Git Engine, subseção "Investigação: merge entre branches" |
 | Banco de dados local | SQLite vs outra opção | **SQLite** ✓ (decidido por análise, Sessão 1) — guarda só metadados, nunca o conteúdo dos arquivos do mundo (isso continua sendo Git + filesystem). Schema proposto: §Schema do Banco Local |
 | Biblioteca de acesso ao SQLite | `rusqlite` (síncrona) vs `sqlx` (assíncrona) vs `sea-orm` (ORM assíncrono) | **`sea-orm` 2.0** ✓ (decisão final, Sessão 2, revisando a escolha inicial de `rusqlite` da mesma sessão) — o usuário pediu pra reavaliar quando a segunda tabela (`instances`) apareceu no horizonte: com ~10 tabelas planejadas no PRD, trocar de fundação agora (2 tabelas) é mais barato que trocar depois (10 tabelas de SQL cru escritas à mão). `mcgit-db` reescrito por completo: entidades via `#[derive(DeriveEntityModel)]`, enums tipados via `DeriveActiveEnum` (`JavaSource` — string desconhecida no banco agora é erro real, não fallback silencioso), migrations via `sea-orm-migration`. `Db::open`/`open_in_memory` viraram `async`; `DatabaseConnection` é internamente um pool compartilhável, então o `Mutex<Db>` da Fase 1 original **foi removido** (ver §Débitos Técnicos — um dos 4 débitos originais já fechado). Dependências: `sea-orm`/`sea-orm-migration` com features `macros, sqlx-sqlite, runtime-tokio-rustls` (traz `sqlx` por baixo, mas a API de aplicação é a do SeaORM) |
 | Migração de schema do SQLite | Arquivo único idempotente (`schema.sql`) vs `rusqlite_migration` vs ORM completo (`sea-orm`) | **Resolvido junto com a decisão acima (Sessão 2)** — a troca pra SeaORM já veio com `sea-orm-migration` embutido, então o meio-termo (`rusqlite_migration`) nunca chegou a ser necessário. Migrations vivem em `crates/mcgit-db/src/migrations/`, uma por tabela (`m20260816_000001_create_java_installations.rs` reaplica o schema que o `rusqlite` já usava, incluindo o índice único parcial do `is_default` — escrito como SQL cru via `execute_unprepared`, porque o construtor de schema do SeaORM não cobre bem valor-padrão-por-função (`datetime('now')`) nem índice parcial; escrito assim de propósito, não por falta de tentar o construtor). Rastreamento de quais migrations já rodaram fica numa tabela própria (`seaql_migrations`), confirmado funcionando contra o banco real |
@@ -633,6 +633,152 @@ mundo (arquivo modificado + arquivo novo) commitada na branch "experiment", comp
 se auto-atualizando depois de um snapshot novo (a correção acima, testada ao vivo, não só nos
 testes automatizados); comparação confirmada limpa depois de trocar de volta pra "main". Também
 serviu como verificação retroativa de "Criar/trocar de branch" (pendente da sessão anterior).
+
+---
+
+### Investigação: merge entre branches — feita (Sessão 8, continuação, 2026-09-01)
+
+Terceiro e último item da Fase 6, pedido explicitamente como investigação (não implementação
+ainda). Seguindo o mesmo método já usado antes de implementar `delete_snapshot` (validar na mão
+num repositório Git descartável antes de decidir qualquer coisa), 5 experimentos reais foram
+rodados — não é uma resposta teórica.
+
+**Resultado principal (revisado — ver correção abaixo): merge tradicional do Git nunca corrompe
+nem perde dado silenciosamente, desde que o mcgit nunca tente resolver um conflito de conteúdo
+sozinho — o próprio Git já se recusa a fazer isso. Mas isso não é a mesma coisa que "merge é
+seguro pra combinar trabalho em paralelo": a granularidade do conflito é o arquivo inteiro (uma
+região `.mca` inteira, 512×512 blocos), não o chunk/bloco que realmente mudou.** A preocupação
+original (registrada desde a Fase 0) tratava merge como uma coisa só ("merge é seguro ou não?").
+Os experimentos mostram que a resposta certa é por caso — e o experimento 6 abaixo, feito depois
+de o usuário questionar diretamente o resultado inicial, é o que muda a conclusão de "pode
+construir sem ressalva" pra "pode construir, mas com o alcance real do problema bem explicado":
+
+1. **Arquivos diferentes alterados em cada branch** (ex.: duas regiões diferentes do mundo
+   construídas em paralelo) → merge automático limpo, sem conflito, mesmo sendo tudo binário —
+   Git faz merge por arquivo inteiro, não por conteúdo, quando não há sobreposição.
+2. **Mesmo arquivo, as duas branches chegam no mesmo resultado exato** (hash idêntico) → merge
+   automático limpo, sem conflito — não há nada pra reconciliar.
+3. **Mesmo arquivo binário, conteúdo diferente nas duas branches** → Git detecta que é binário
+   (mesma heurística do comando `file`) e **se recusa a tentar um merge de conteúdo** — nunca
+   injeta marcadores de conflito (`<<<<<<<`/`=======`/`>>>>>>>`) dentro do arquivo. Isso só
+   acontece se o Git achar que é texto (testado de propósito com um arquivo texto puro primeiro,
+   pra confirmar o risco real: aí sim os marcadores foram escritos literalmente dentro do
+   arquivo — por isso identificar corretamente os arquivos de mundo como binários pro Git
+   importa; não deveria ser um problema hoje, já que `.mca`/`level.dat` reais sempre têm bytes
+   não-texto, mas vale registrar como um requisito, não uma garantia grátis).
+4. **Arquivo deletado numa branch, modificado na outra** ("modify/delete", um tipo de conflito
+   diferente do de conteúdo) → também detectado e reportado com clareza pelo Git
+   (`deleted by them`), arquivo modificado preservado intacto no disco, nada corrompido.
+5. Em ambos os casos de conflito (3 e 4), **as duas versões completas continuam recuperáveis**
+   via `git ls-files -u` (3 estágios: base/ours/theirs, cada um endereçável por hash de blob), e
+   **`git merge --abort` desfaz tudo de forma limpa e completa** — confirmado comparando o
+   conteúdo do arquivo antes/depois do abort.
+6. **(Correção, mesma sessão, após pergunta direta do usuário) Duas mudanças SEM NENHUMA
+   sobreposição real, mas dentro do MESMO arquivo** — simulado como uma "casa" escrita nos
+   primeiros 100 bytes de um arquivo de 4096 bytes numa branch, e um "bloco quebrado por mob"
+   escrito nos bytes 4000-4001 (ponta completamente oposta) na outra → **ainda assim conflito no
+   arquivo inteiro**, mesmo padrão do experimento 3. O Git não tem como saber que as duas
+   mudanças não se sobrepõem de verdade — ele só vê "o blob final é diferente nos dois lados",
+   ponto. Confirmado com `git merge-tree --write-tree` (preview, sem tocar em nada):
+   `CONFLICT (content): Merge conflict in r.0.0.mca`.
+
+**O que isso significa numa mesa de jogo de verdade**: um arquivo de região (`.mca`) cobre 32×32
+chunks = 512×512 blocos. O cenário "casa construída na main, um mob quebra um bloco em outro
+canto da mesma região na branch" — ou pior, "duas casas em lugares diferentes mas dentro da
+mesma região" — força escolher **a região inteira de uma branch ou da outra**, descartando por
+completo o que a branch perdedora tinha ali, mesmo que as duas mudanças não tivessem relação
+nenhuma entre si. Isso não é um bug do mcgit nem do Git — é a granularidade inerente de qualquer
+merge binário-por-arquivo. Resolver de verdade (reconciliar duas mudanças reais dentro da mesma
+região, chunk a chunk) exige entender o formato Anvil/NBT por dentro — exatamente o que a **Fase
+4 (Minecraft-Aware World Diffing)** existe pra fazer, e que a Fase 6 (Git Engine puro) não tem
+como resolver sozinha.
+
+**Descoberta extra útil pro design**: `git merge-tree --write-tree <branch-a> <branch-b>`
+(Git ≥ 2.38 — a máquina de desenvolvimento tem 2.55.0) faz um **preview do merge sem tocar a
+árvore de trabalho nem o índice** — devolve só o hash da árvore resultante (sucesso) ou a lista
+de arquivos conflitantes com aviso (falha), sem nunca deixar o repositório num estado de merge
+pendente. Isso significa que uma futura UI de merge pode mostrar "esses N arquivos vão
+conflitar, quer continuar?" **antes** de qualquer coisa tocar os arquivos do jogador — só chama
+`git merge` de verdade depois que o jogador confirma.
+
+**Design de resolução decorrente (não implementado ainda, só desenhado)**: como o Git nunca tenta
+reconciliar conteúdo binário sozinho, resolver um conflito na UI do mcgit não precisa entender
+NBT/Anvil — só precisa deixar o jogador escolher, **por arquivo (= região) inteiro**, qual versão
+manter. Dado o achado do experimento 6, a cópia da UI precisa deixar isso explícito — não pode
+soar como "resolvendo um conflito pontual", já que na prática é "escolhendo qual versão de uma
+região de 512×512 blocos manter, perdendo qualquer outra mudança que a branch descartada tinha
+ali":
+- Detectar arquivos conflitantes: `git diff --name-only --diff-filter=U` (ou `git ls-files -u`
+  se precisar diferenciar modify/modify de modify/delete).
+- Idealmente, mostrar isso via `git merge-tree --write-tree` **antes** de rodar `git merge` de
+  verdade — "essas N regiões vão conflitar: escolher uma versão inteira de cada, descartando a
+  outra" — pra decisão ser informada antes de qualquer coisa mudar de verdade.
+- "Manter a versão desta branch": `git checkout --ours -- <path>` + `git add <path>` (ou
+  `git rm <path>` se o "ours" for a deleção).
+- "Manter a versão da outra branch": `git checkout --theirs -- <path>` + `git add <path>` (ou
+  `git rm <path>` se o "theirs" for a deleção).
+- Depois de resolver todos os arquivos conflitantes: `git commit` fecha o merge.
+- Cancelar a qualquer momento: `git merge --abort` (verificado seguro nos experimentos acima).
+
+**Não implementado nesta investigação em si** — o pedido inicial foi só investigar. A conclusão
+final não é um "sim, simples" — é "sim, mas com um alcance de perda real que precisa ficar óbvio
+pro jogador antes de ele confirmar um merge", já que a Fase 6 sozinha (Git puro) não tem como
+resolver dentro de uma região; só a Fase 4 (Minecraft-Aware World Diffing) resolveria isso de
+verdade. O design acima virou código de verdade ainda na mesma sessão — ver subseção "Merge
+entre branches — implementado" logo abaixo.
+
+---
+
+### Merge entre branches — implementado (Sessão 8, continuação, 2026-09-01)
+
+Terceiro e último item da Fase 6, implementado na sequência direta da investigação acima (mesma
+sessão), com o usuário confirmando via `AskUserQuestion` que queria seguir mesmo com o alcance
+de perda real explicado. Fecha o ciclo do Git Engine puro: ativar/desativar → snapshot →
+histórico → restaurar → deletar → criar/trocar branch → comparar → **merge**.
+
+- **`git.rs` ganha 7 funções/tipos novos**: `preview_merge()` (`git merge-tree --write-tree`,
+  não toca working tree/índice), `list_merge_conflicts()` (parseia `git status --porcelain=v1`,
+  6 códigos XY de conflito → `ConflictKind::{BothModified,DeletedByUs,DeletedByThem}`),
+  `merge_branch()` (roda `git merge` de verdade, retorna `MergeOutcome::Merged(hash)` ou
+  `ConflictsPending(Vec<ConflictedFile>)`), `resolve_conflict()` (`checkout --ours`/`--theirs`,
+  com fallback pra `git rm` quando o lado escolhido é o que deletou — detectado pelo próprio
+  texto de erro do Git, `"does not have (our|their) version"`), `finish_merge()` (`git commit`
+  sem `add -A`, só o que já foi resolvido), `abort_merge()` (`git merge --abort`).
+- **Duas guardas próprias**: mundo aberto (`is_currently_open`, mesma de sempre) e merge já em
+  andamento (`is_merge_in_progress`, checa `.git/MERGE_HEAD`) — evita o erro genérico e confuso
+  do Git ("Exiting because of an unresolved conflict") quando alguém tenta iniciar um segundo
+  merge sem resolver o primeiro (achado real durante os experimentos da investigação).
+- **Novo erro `MergeError`** (`WorldCurrentlyOpen`/`AlreadyInProgress`/`Git`/`Io`), mesmo formato
+  de `RestoreError`/`BranchError`.
+- **9 testes novos** (`mcgit-core`): preview limpo/conflitante, merge limpo, merge com conflito,
+  merge recusado com merge já em andamento, merge recusado com mundo travado, resolver +
+  finalizar (confirma commit de 2 pais via `git log --format=%P`), resolver um conflito de
+  modify/delete mantendo o lado que deletou (confirma que o arquivo some), abortar restaura o
+  estado exato de antes. 41/41 verdes no crate.
+- **Ponte Tauri**: `preview_world_merge`, `merge_world_branch` (retorna `MergeOutcomeDto` com tag
+  `Merged`/`ConflictsPending`), `resolve_world_merge_conflict`, `finish_world_merge`,
+  `abort_world_merge`.
+- **UI**: terceiro botão "Merge" por branch não-atual em `WorldBranches.tsx`, ao lado de
+  Switch/Compare. Fluxo em 2 passos, sempre inline (nunca modal): (1) preview mostra a lista real
+  de arquivos que vão conflitar, com o aviso de granularidade escrito por extenso — "N files
+  would conflict: ... You'll pick one branch's full version of each — the losing side's changes
+  to that whole file are discarded"; (2) se confirmado e houver conflito de verdade, entra num
+  modo de resolução por arquivo ("Keep this branch's version" / "Keep the other branch's
+  version"), com "Abort merge" sempre visível e "Finish merge" aparecendo só quando a lista de
+  conflitos esvazia. Criar ou trocar de branch durante um merge pendente limpa esse estado local
+  (a comparação ficaria sem sentido).
+
+**Verificado ao vivo pela GUI real** (tela livre, mesma sessão da investigação): fluxo completo
+com um conflito real em `level.dat` entre `main` e `experiment` — preview mostrou corretamente
+"1 file would conflict: level.dat..."; merge real confirmado entrou em conflito
+("1 file need to be resolved..."); resolvido escolhendo "Keep this branch's version"; "Finish
+merge" fechou o merge com sucesso ("Merged \"experiment\"."). Conferido direto no disco depois:
+conteúdo do arquivo bate com a versão escolhida, e `git log --format=%P` do commit de merge
+mostra os dois pais reais (`a4c39e3` e `1bb8092`), confirmando uma topologia de merge genuína,
+não uma simulação. Um segundo cenário de conflito foi criado e desta vez **abortado** em vez de
+resolvido: `git status`/conteúdo do arquivo confirmados batendo exatamente com o estado de antes
+do merge, `.git/MERGE_HEAD` ausente depois — abort realmente limpo, como os experimentos da
+investigação já indicavam.
 
 ---
 

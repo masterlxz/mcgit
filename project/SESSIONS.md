@@ -847,3 +847,114 @@ sentido pra arquivos de mundo (ainda em aberto, não urgente). Próxima frente n
 priorizada: Fase 2 (qualidade do versionamento — auto-snapshot, auto-gc) ou Fase 4 (diff entre
 snapshots), a critério do usuário. Game Runner e login Microsoft seguem pausados/bloqueados por
 `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 8 (segunda continuação) — 2026-09-01 — Fase 6: investigação de merge entre branches
+
+Terceiro e último item da Fase 6, pedido diretamente ("já investiga isso aí") logo após fechar a
+comparação entre branches. Seguindo o mesmo método já usado antes de implementar
+`delete_snapshot` — validar na mão num repositório Git descartável antes de decidir qualquer
+coisa —, rodados 5 experimentos reais (não análise teórica): (1) arquivos diferentes alterados
+em cada branch, (2) mesmo arquivo com resultado idêntico nos dois lados, (3) mesmo arquivo
+binário com conteúdo diferente, (4) arquivo deletado numa branch e modificado na outra, (5)
+`git merge --abort` depois de um conflito.
+
+**Resultado: merge tradicional do Git é seguro pra arquivos binários de mundo**, desde que o
+mcgit nunca tente resolver conflito de conteúdo sozinho — o Git já se recusa a fazer isso e
+nunca injeta marcadores de conflito dentro de um arquivo binário (confirmado o contraste testando
+primeiro com um arquivo texto puro de propósito: aí sim os marcadores `<<<<<<<` foram escritos
+literalmente dentro do arquivo). Arquivos diferentes e resultados idênticos fazem merge
+automático limpo mesmo sendo tudo binário; conflitos de conteúdo e de modify/delete são
+detectados com clareza, o arquivo original fica intacto no disco, as duas versões continuam
+recuperáveis via `git ls-files -u`, e `merge --abort` desfaz tudo sem deixar rastro.
+`git merge-tree --write-tree` (Git ≥ 2.38) permite pré-visualizar se um merge vai conflitar sem
+tocar a árvore de trabalho nem o índice — útil pra confirmar com o jogador antes de qualquer
+coisa mudar de verdade. Um desenho de resolução ficou pronto (escolher "esta versão" ou "a
+outra" por arquivo inteiro via `checkout --ours`/`--theirs`), mas **nada foi implementado** —
+o pedido foi só a investigação.
+
+Detalhes completos em `ARCHITECTURE.md` §Git Engine (subseção "Investigação: merge entre
+branches"); checklist fechado em `PHASE.md` Fase 6.
+
+**Estado ao final da sessão**: os 3 itens da Fase 6 estão fechados — criar/trocar branch e
+comparação implementados e verificados ao vivo; merge investigado com achados reais e um design
+de resolução pronto, mas não implementado (fica pra quando o usuário quiser esse próximo
+incremento). Próxima frente natural da trilha priorizada: Fase 2 (auto-snapshot/auto-gc) ou
+Fase 4 (diff entre snapshots), a critério do usuário — ou implementar o merge desenhado aqui, se
+preferir fechar o ciclo de branching primeiro. Game Runner e login Microsoft seguem
+pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não
+urgente.
+
+---
+
+## Sessão 8 (terceira continuação) — 2026-09-01 — Correção da investigação de merge
+
+O usuário questionou diretamente a conclusão da continuação anterior, com um cenário concreto:
+"e se algo tiver sendo criado na main, e outra na branch, tipo não vai conflitar? duas casas no
+msm lugar, ou uma casa na main, mas passou um mob lá e quebrou um bloco na branch, não vai cagar
+tudo?" — um furo real na investigação: os 5 experimentos anteriores só cobriam arquivos
+inteiros diferentes ou idênticos, nunca duas mudanças *sem sobreposição real* dentro do *mesmo*
+arquivo.
+
+Rodado um sexto experimento pra confirmar antes de responder: duas branches, mesmo arquivo de
+4096 bytes simulando uma região, uma muda os primeiros 100 bytes ("casa" num canto), a outra
+muda 2 bytes na ponta completamente oposta ("bloco quebrado por mob", zero relação com a
+mudança anterior) — **mesmo assim, conflito no arquivo inteiro**, confirmado via
+`git merge-tree --write-tree` sem precisar nem tocar numa árvore de trabalho real. O Git não
+tem como saber que as duas mudanças não se sobrepõem de verdade — ele só vê "o blob final é
+diferente dos dois lados".
+
+Isso muda a conclusão principal: não é mais "merge é seguro, ponto" — é "merge nunca corrompe ou
+perde dado *silenciosamente*, mas a granularidade do conflito é a região `.mca` inteira (512×512
+blocos), não o chunk/bloco que realmente mudou". Pra duas branches ativas em paralelo tocando a
+mesma região — o que inclui atividade passiva de mob, não só construção intencional — isso gera
+conflito com frequência real, e resolver descarta uma versão inteira da região, não só a parte
+que de fato conflitou. Resolver isso de verdade é trabalho da Fase 4 (Minecraft-Aware World
+Diffing), que entende o formato Anvil/NBT por dentro — a Fase 6 (Git puro) não tem como fazer
+isso sozinha.
+
+`ARCHITECTURE.md` §Git Engine (subseção "Investigação: merge entre branches") e o checklist da
+Fase 6 em `PHASE.md` foram corrigidos com essa ressalva antes de qualquer código de merge ser
+escrito — a investigação segue marcada como feita, mas com a conclusão certa, não a otimista
+demais da continuação anterior.
+
+**Estado ao final desta continuação**: investigação de merge da Fase 6 corrigida e completa.
+Nenhum código de merge foi escrito ainda em nenhuma das duas continuações — só investigação.
+Mesmas opções de próximo passo de antes (Fase 2, Fase 4, ou implementar o merge já com o aviso
+de granularidade desenhado). Game Runner e login Microsoft seguem pausados/bloqueados por
+`PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 8 (quarta continuação) — 2026-09-01 — Fase 6: merge entre branches, implementado
+
+Pedido direto do usuário ("já implementa o merge mesmo assim") logo depois da correção da
+investigação. `git.rs` ganha `preview_merge`/`list_merge_conflicts`/`merge_branch`/
+`resolve_conflict`/`finish_merge`/`abort_merge` — a mecânica exata já validada na investigação
+(`checkout --ours`/`--theirs` com fallback pra `git rm` em conflito modify/delete,
+`merge-tree --write-tree` como preview sem tocar nada, `merge --abort` limpo). Duas guardas
+novas: mundo aberto e merge já em andamento (`MergeError::AlreadyInProgress`, evita o erro
+genérico do Git quando alguém tenta um segundo merge sem resolver o primeiro — achado real da
+investigação). 9 testes novos, 41/41 no crate. Ponte Tauri com 5 comandos novos; UI com um
+terceiro botão "Merge" por branch, fluxo em dois passos (preview com a lista real de arquivos
+conflitantes e o aviso de granularidade por extenso, depois resolução por arquivo com "Abort
+merge" sempre disponível).
+
+A tela estava livre a maior parte da sessão, então a verificação ao vivo aconteceu de verdade
+(uma interrupção por erro transitório de API no meio do fluxo — não relacionada ao mcgit — só
+pediu um "tenta novamente" e a captura de tela seguinte confirmou que a ação já tinha sido
+aplicada corretamente antes da falha). Dois cenários de conflito real testados: um resolvido
+("Keep this branch's version", "Finish merge" concluído com sucesso, commit de merge de 2 pais
+confirmado direto no `git log --format=%P`) e um abortado (`git status`/conteúdo do arquivo
+conferidos batendo exatamente com o estado de antes do merge, `.git/MERGE_HEAD` ausente depois).
+
+Detalhes completos em `ARCHITECTURE.md` §Git Engine (subseção "Merge entre branches —
+implementado"); checklist fechado em `PHASE.md` Fase 6 — os 3 itens agora completos.
+
+**Estado ao final da sessão**: Fase 6 (Branching de Mundos) completa — criar/trocar branch,
+comparação e merge, todos implementados e verificados ao vivo pela GUI real. Próxima frente
+natural da trilha priorizada: Fase 2 (qualidade do versionamento — auto-snapshot, auto-gc) ou
+Fase 4 (diff Minecraft-aware entre snapshots), a critério do usuário. Game Runner e login
+Microsoft seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge segue
+em aberto, não urgente.

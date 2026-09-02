@@ -1,12 +1,23 @@
 import { useState } from "react";
-import type { Branch, FileChange } from "../../api/world";
+import type { Branch, ConflictedFile, FileChange } from "../../api/world";
+
+export type MergeState =
+  | { phase: "preview"; otherBranch: string; conflictingFiles: string[] }
+  | { phase: "resolving"; otherBranch: string; conflicts: ConflictedFile[] };
 
 type Props = {
   branches: Branch[];
   diff: { otherBranch: string; changes: FileChange[] } | undefined;
+  mergeState: MergeState | undefined;
   onCreate: (name: string) => void;
   onSwitch: (name: string) => void;
   onCompare: (name: string) => void;
+  onPreviewMerge: (name: string) => void;
+  onCancelMergePreview: () => void;
+  onMerge: (name: string) => void;
+  onResolveConflict: (path: string, keep: "ours" | "theirs") => void;
+  onFinishMerge: () => void;
+  onAbortMerge: () => void;
 };
 
 function formatSize(bytes: number | null): string {
@@ -26,7 +37,31 @@ function describeChange(change: FileChange): string {
   }
 }
 
-export function WorldBranches({ branches, diff, onCreate, onSwitch, onCompare }: Props) {
+function describeConflictKind(kind: ConflictedFile["kind"]): string {
+  switch (kind) {
+    case "both_modified":
+      return "changed differently on both sides";
+    case "deleted_by_us":
+      return "deleted here, changed on the other branch";
+    case "deleted_by_them":
+      return "changed here, deleted on the other branch";
+  }
+}
+
+export function WorldBranches({
+  branches,
+  diff,
+  mergeState,
+  onCreate,
+  onSwitch,
+  onCompare,
+  onPreviewMerge,
+  onCancelMergePreview,
+  onMerge,
+  onResolveConflict,
+  onFinishMerge,
+  onAbortMerge,
+}: Props) {
   const [newBranchName, setNewBranchName] = useState("");
   const [confirmingSwitchFor, setConfirmingSwitchFor] = useState<string | null>(null);
   const [openDiffFor, setOpenDiffFor] = useState<string | null>(null);
@@ -85,6 +120,9 @@ export function WorldBranches({ branches, diff, onCreate, onSwitch, onCompare }:
                 <button onClick={() => toggleDiff(branch.name)}>
                   {openDiffFor === branch.name ? "Hide compare" : "Compare"}
                 </button>
+                {!mergeState && (
+                  <button onClick={() => onPreviewMerge(branch.name)}>Merge</button>
+                )}
               </>
             )}
             {!branch.is_current && openDiffFor === branch.name && (
@@ -103,6 +141,53 @@ export function WorldBranches({ branches, diff, onCreate, onSwitch, onCompare }:
                   ))}
               </ul>
             )}
+            {mergeState &&
+              mergeState.otherBranch === branch.name &&
+              mergeState.phase === "preview" && (
+                <div>
+                  {mergeState.conflictingFiles.length === 0 ? (
+                    <em>No files would conflict — safe to merge.</em>
+                  ) : (
+                    <em>
+                      {mergeState.conflictingFiles.length} file
+                      {mergeState.conflictingFiles.length === 1 ? "" : "s"} would conflict:{" "}
+                      {mergeState.conflictingFiles.join(", ")}. You'll pick one branch's full
+                      version of each — the losing side's changes to that whole file are
+                      discarded.
+                    </em>
+                  )}{" "}
+                  <button onClick={onCancelMergePreview}>Cancel</button>
+                  <button onClick={() => onMerge(branch.name)}>
+                    {mergeState.conflictingFiles.length === 0 ? "Merge" : "Merge anyway"}
+                  </button>
+                </div>
+              )}
+            {mergeState &&
+              mergeState.otherBranch === branch.name &&
+              mergeState.phase === "resolving" && (
+                <div>
+                  <p>
+                    <em>Resolving merge with "{branch.name}":</em>
+                  </p>
+                  <ul>
+                    {mergeState.conflicts.map((conflict) => (
+                      <li key={conflict.path}>
+                        {conflict.path} — <em>{describeConflictKind(conflict.kind)}</em>{" "}
+                        <button onClick={() => onResolveConflict(conflict.path, "ours")}>
+                          Keep this branch's version
+                        </button>
+                        <button onClick={() => onResolveConflict(conflict.path, "theirs")}>
+                          Keep the other branch's version
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <button onClick={onAbortMerge}>Abort merge</button>
+                  {mergeState.conflicts.length === 0 && (
+                    <button onClick={onFinishMerge}>Finish merge</button>
+                  )}
+                </div>
+              )}
           </li>
         ))}
       </ul>

@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use crate::types::{BranchError, DeleteError, GitError, RestoreError};
+use crate::types::{BranchError, DeleteError, GitError, MergeError, RestoreError};
 
 /// Runs `git <args>` in `world_dir`, mapping a failed spawn or a non-zero
 /// exit code to `GitError`. Every function in this module that shells out
@@ -439,6 +439,198 @@ pub fn diff_branches(world_dir: &Path, from: &str, to: &str) -> Result<Vec<FileC
     }
 
     Ok(changes)
+}
+
+/// Whether `world_dir` currently has a merge in progress (started but not
+/// yet finished or aborted).
+fn is_merge_in_progress(world_dir: &Path) -> bool {
+    world_dir.join(".git").join("MERGE_HEAD").is_file()
+}
+
+/// Previews merging `to` into `from` without touching the working tree or
+/// the index at all — `git merge-tree --write-tree` is a pure read-only
+/// operation. Returns the paths that would conflict; an empty list means
+/// the merge would be clean. Doesn't go through `run()`: a non-zero exit
+/// here just means "would conflict", not a failure.
+pub fn preview_merge(world_dir: &Path, from: &str, to: &str) -> Result<Vec<String>, GitError> {
+    let output = Command::new("git")
+        .args(["merge-tree", "--write-tree", from, to])
+        .current_dir(world_dir)
+        .output()
+        .map_err(|e| GitError::Spawn(e.to_string()))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.trim().is_empty() {
+        return Err(GitError::CommandFailed(
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        ));
+    }
+
+    // First line is the resulting tree hash (only meaningful on a clean
+    // merge, unused here). Conflicting entries look like
+    // `<mode> <oid> <stage>\t<path>`; the trailing human-readable
+    // "Auto-merging"/"CONFLICT" lines don't match that shape and are
+    // skipped.
+    let mut paths: Vec<String> = Vec::new();
+    for line in stdout.lines().skip(1) {
+        let mut fields = line.splitn(2, '\t');
+        let (Some(prefix), Some(path)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        if prefix.split(' ').count() != 3 {
+            continue;
+        }
+        if !paths.iter().any(|p| p == path) {
+            paths.push(path.to_string());
+        }
+    }
+    Ok(paths)
+}
+
+/// Which side of a merge conflict is missing a version of a file, as
+/// opposed to both sides having genuinely different content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictKind {
+    BothModified,
+    DeletedByUs,
+    DeletedByThem,
+}
+
+/// One file with an unresolved conflict during an in-progress merge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictedFile {
+    pub path: String,
+    pub kind: ConflictKind,
+}
+
+/// Lists every unresolved conflict in `world_dir`, via `git status
+/// --porcelain=v1`'s XY status codes for unmerged paths.
+pub fn list_merge_conflicts(world_dir: &Path) -> Result<Vec<ConflictedFile>, GitError> {
+    let output = run(world_dir, &["status", "--porcelain=v1"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    Ok(stdout
+        .lines()
+        .filter_map(|line| {
+            if line.len() < 4 {
+                return None;
+            }
+            let kind = match &line[0..2] {
+                "UD" => ConflictKind::DeletedByThem,
+                "DU" => ConflictKind::DeletedByUs,
+                "UU" | "AA" | "AU" | "UA" => ConflictKind::BothModified,
+                _ => return None,
+            };
+            Some(ConflictedFile {
+                path: line[3..].to_string(),
+                kind,
+            })
+        })
+        .collect())
+}
+
+/// Outcome of attempting to merge another branch into the current one:
+/// either a clean merge commit, or the set of files that need resolving
+/// before the merge can be finished.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MergeOutcome {
+    Merged(String),
+    ConflictsPending(Vec<ConflictedFile>),
+}
+
+/// Merges `other` into `world_dir`'s current branch. Refuses if the world
+/// looks currently open in Minecraft (a merge can rewrite files on disk,
+/// same risk class as `restore`/`switch_branch`), or if a previous merge is
+/// still unresolved — Git itself refuses a second `merge` in that state
+/// with a confusing generic error ("Exiting because of an unresolved
+/// conflict"), caught here with a clearer one instead.
+pub fn merge_branch(world_dir: &Path, other: &str) -> Result<MergeOutcome, MergeError> {
+    if is_currently_open(world_dir)? {
+        return Err(MergeError::WorldCurrentlyOpen);
+    }
+    if is_merge_in_progress(world_dir) {
+        return Err(MergeError::AlreadyInProgress);
+    }
+
+    ensure_identity(world_dir)?;
+    let output = Command::new("git")
+        .args(["merge", other, "-m", &format!("Merge branch '{other}'")])
+        .current_dir(world_dir)
+        .output()
+        .map_err(|e| GitError::Spawn(e.to_string()))?;
+
+    if output.status.success() {
+        let rev = run(world_dir, &["rev-parse", "HEAD"])?;
+        return Ok(MergeOutcome::Merged(trimmed_stdout(rev)));
+    }
+
+    // A real conflict leaves MERGE_HEAD behind; anything else (e.g. a bad
+    // ref name) doesn't, and is a genuine error worth surfacing as such.
+    if is_merge_in_progress(world_dir) {
+        return Ok(MergeOutcome::ConflictsPending(list_merge_conflicts(world_dir)?));
+    }
+    Err(MergeError::Git(GitError::CommandFailed(
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )))
+}
+
+/// Which side of a conflict to keep when resolving it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Ours,
+    Theirs,
+}
+
+/// Resolves one conflicted file during an in-progress merge by keeping
+/// `keep`'s version. For a content conflict this is a plain `git checkout
+/// --ours`/`--theirs`; for a modify/delete conflict where `keep` is the
+/// side that deleted the file, there's no version to check out (Git
+/// refuses with "does not have our/their version") — resolving there means
+/// accepting the deletion via `git rm` instead.
+pub fn resolve_conflict(world_dir: &Path, path: &str, keep: Side) -> Result<(), MergeError> {
+    if is_currently_open(world_dir)? {
+        return Err(MergeError::WorldCurrentlyOpen);
+    }
+
+    let flag = match keep {
+        Side::Ours => "--ours",
+        Side::Theirs => "--theirs",
+    };
+    let output = Command::new("git")
+        .args(["checkout", flag, "--", path])
+        .current_dir(world_dir)
+        .output()
+        .map_err(|e| GitError::Spawn(e.to_string()))?;
+
+    if output.status.success() {
+        run(world_dir, &["add", "--", path])?;
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("does not have our version") || stderr.contains("does not have their version") {
+            run(world_dir, &["rm", "--", path])?;
+        } else {
+            return Err(MergeError::Git(GitError::CommandFailed(stderr.into_owned())));
+        }
+    }
+
+    Ok(())
+}
+
+/// Finishes an in-progress merge once every conflict has been resolved
+/// (staged via `resolve_conflict`). Doesn't `add -A` — only what was
+/// explicitly resolved should go into the merge commit.
+pub fn finish_merge(world_dir: &Path, message: &str) -> Result<String, GitError> {
+    ensure_identity(world_dir)?;
+    run(world_dir, &["commit", "-m", message])?;
+    let rev = run(world_dir, &["rev-parse", "HEAD"])?;
+    Ok(trimmed_stdout(rev))
+}
+
+/// Aborts an in-progress merge, restoring the world exactly to how it was
+/// before the merge started.
+pub fn abort_merge(world_dir: &Path) -> Result<(), GitError> {
+    run(world_dir, &["merge", "--abort"])?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1061,5 +1253,235 @@ mod tests {
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn preview_merge_reports_no_conflicts_for_non_overlapping_files() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-preview-clean-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("r.0.0.mca"), b"base").unwrap();
+        std::fs::write(world_dir.join("r.1.0.mca"), b"base").unwrap();
+        commit(&world_dir, "Base").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("r.1.0.mca"), b"changed-on-experiment").unwrap();
+        commit(&world_dir, "Experiment change").unwrap();
+        switch_branch(&world_dir, &main).unwrap();
+        std::fs::write(world_dir.join("r.0.0.mca"), b"changed-on-main").unwrap();
+        commit(&world_dir, "Main change").unwrap();
+
+        let conflicts = preview_merge(&world_dir, &main, "experiment").unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn preview_merge_reports_conflicting_file() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-preview-conflict-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
+        commit(&world_dir, "Base").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
+        commit(&world_dir, "Experiment change").unwrap();
+        switch_branch(&world_dir, &main).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
+        commit(&world_dir, "Main change").unwrap();
+
+        let conflicts = preview_merge(&world_dir, &main, "experiment").unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(conflicts, vec!["level.dat".to_string()]);
+    }
+
+    #[test]
+    fn merge_branch_succeeds_cleanly_when_no_conflict() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-merge-clean-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("r.0.0.mca"), b"base").unwrap();
+        std::fs::write(world_dir.join("r.1.0.mca"), b"base").unwrap();
+        commit(&world_dir, "Base").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("r.1.0.mca"), b"changed-on-experiment").unwrap();
+        commit(&world_dir, "Experiment change").unwrap();
+        switch_branch(&world_dir, &main).unwrap();
+        std::fs::write(world_dir.join("r.0.0.mca"), b"changed-on-main").unwrap();
+        commit(&world_dir, "Main change").unwrap();
+
+        let outcome = merge_branch(&world_dir, "experiment").unwrap();
+
+        let r00 = std::fs::read(world_dir.join("r.0.0.mca")).unwrap();
+        let r10 = std::fs::read(world_dir.join("r.1.0.mca")).unwrap();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(matches!(outcome, MergeOutcome::Merged(_)));
+        assert_eq!(r00, b"changed-on-main");
+        assert_eq!(r10, b"changed-on-experiment");
+    }
+
+    #[test]
+    fn merge_branch_returns_conflicts_pending_on_content_conflict() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-merge-conflict-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
+        commit(&world_dir, "Base").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
+        commit(&world_dir, "Experiment change").unwrap();
+        switch_branch(&world_dir, &main).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
+        commit(&world_dir, "Main change").unwrap();
+
+        let outcome = merge_branch(&world_dir, "experiment").unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        match outcome {
+            MergeOutcome::ConflictsPending(conflicts) => {
+                assert_eq!(conflicts.len(), 1);
+                assert_eq!(conflicts[0].path, "level.dat");
+                assert_eq!(conflicts[0].kind, ConflictKind::BothModified);
+            }
+            MergeOutcome::Merged(_) => panic!("expected a conflict"),
+        }
+    }
+
+    #[test]
+    fn merge_branch_refuses_when_already_in_progress() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-merge-already-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
+        commit(&world_dir, "Base").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
+        commit(&world_dir, "Experiment change").unwrap();
+        switch_branch(&world_dir, &main).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
+        commit(&world_dir, "Main change").unwrap();
+        merge_branch(&world_dir, "experiment").unwrap(); // leaves a conflict in progress
+
+        let result = merge_branch(&world_dir, "experiment");
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(matches!(result, Err(MergeError::AlreadyInProgress)));
+    }
+
+    #[test]
+    fn merge_branch_refuses_when_world_is_locked() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-merge-locked-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
+        commit(&world_dir, "Base").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
+        commit(&world_dir, "Experiment change").unwrap();
+        switch_branch(&world_dir, &main).unwrap();
+
+        let lock_file = std::fs::File::create(world_dir.join("session.lock")).unwrap();
+        lock_file.lock().unwrap();
+
+        let result = merge_branch(&world_dir, "experiment");
+
+        drop(lock_file);
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(matches!(result, Err(MergeError::WorldCurrentlyOpen)));
+    }
+
+    #[test]
+    fn resolve_conflict_keep_ours_then_finish_merge() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-resolve-ours-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
+        commit(&world_dir, "Base").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
+        commit(&world_dir, "Experiment change").unwrap();
+        switch_branch(&world_dir, &main).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
+        commit(&world_dir, "Main change").unwrap();
+        merge_branch(&world_dir, "experiment").unwrap();
+
+        resolve_conflict(&world_dir, "level.dat", Side::Ours).unwrap();
+        let merge_hash = finish_merge(&world_dir, "Merge branch 'experiment'").unwrap();
+
+        let content = std::fs::read(world_dir.join("level.dat")).unwrap();
+        let parents = run(&world_dir, &["log", "--format=%P", "-1", &merge_hash]).unwrap();
+        let still_in_progress = is_merge_in_progress(&world_dir);
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(content, b"changed-on-main");
+        assert_eq!(
+            String::from_utf8_lossy(&parents.stdout).trim().split(' ').count(),
+            2,
+            "a finished merge must have two parents"
+        );
+        assert!(!still_in_progress);
+    }
+
+    #[test]
+    fn resolve_conflict_on_modify_delete_keep_theirs_deletes_file() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-resolve-delete-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
+        std::fs::write(world_dir.join("r.0.0.mca"), b"base").unwrap();
+        commit(&world_dir, "Base").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::remove_file(world_dir.join("r.0.0.mca")).unwrap();
+        commit(&world_dir, "Experiment deletes region").unwrap();
+        switch_branch(&world_dir, &main).unwrap();
+        std::fs::write(world_dir.join("r.0.0.mca"), b"changed-on-main").unwrap();
+        commit(&world_dir, "Main modifies region").unwrap();
+        let outcome = merge_branch(&world_dir, "experiment").unwrap();
+        let kind = match outcome {
+            MergeOutcome::ConflictsPending(conflicts) => conflicts[0].kind,
+            MergeOutcome::Merged(_) => panic!("expected a conflict"),
+        };
+        assert_eq!(kind, ConflictKind::DeletedByThem);
+
+        // "theirs" (experiment) deleted the file — keeping theirs means accepting the deletion.
+        resolve_conflict(&world_dir, "r.0.0.mca", Side::Theirs).unwrap();
+        finish_merge(&world_dir, "Merge branch 'experiment'").unwrap();
+
+        let exists = world_dir.join("r.0.0.mca").exists();
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert!(!exists, "keeping the side that deleted the file must remove it");
+    }
+
+    #[test]
+    fn abort_merge_restores_pre_merge_state() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-merge-abort-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        init(&world_dir).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
+        commit(&world_dir, "Base").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+        create_branch(&world_dir, "experiment").unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
+        commit(&world_dir, "Experiment change").unwrap();
+        switch_branch(&world_dir, &main).unwrap();
+        std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
+        commit(&world_dir, "Main change").unwrap();
+        merge_branch(&world_dir, "experiment").unwrap();
+
+        abort_merge(&world_dir).unwrap();
+
+        let content = std::fs::read(world_dir.join("level.dat")).unwrap();
+        let still_in_progress = is_merge_in_progress(&world_dir);
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(content, b"changed-on-main", "must match the pre-merge state exactly");
+        assert!(!still_in_progress);
     }
 }

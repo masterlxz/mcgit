@@ -380,3 +380,158 @@ pub async fn diff_world_branches(
 
     Ok(changes.into_iter().map(FileChangeDto::from).collect())
 }
+
+/// Previews merging `other_branch` into the world's current branch without
+/// touching anything — returns the paths that would conflict (empty means
+/// a clean merge).
+#[tauri::command]
+pub async fn preview_world_merge(
+    instance_id: i64,
+    folder_name: String,
+    other_branch: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let instances_dir = state.instances_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        let current = mcgit_core::git::current_branch(&world_dir)?;
+        mcgit_core::git::preview_merge(&world_dir, &current, &other_branch)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConflictedFileDto {
+    pub path: String,
+    pub kind: String,
+}
+
+impl From<mcgit_core::git::ConflictedFile> for ConflictedFileDto {
+    fn from(conflict: mcgit_core::git::ConflictedFile) -> Self {
+        let kind = match conflict.kind {
+            mcgit_core::git::ConflictKind::BothModified => "both_modified",
+            mcgit_core::git::ConflictKind::DeletedByUs => "deleted_by_us",
+            mcgit_core::git::ConflictKind::DeletedByThem => "deleted_by_them",
+        };
+        ConflictedFileDto {
+            path: conflict.path,
+            kind: kind.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind")]
+pub enum MergeOutcomeDto {
+    Merged { commit_hash: String },
+    ConflictsPending { conflicts: Vec<ConflictedFileDto> },
+}
+
+/// Merges `other_branch` into the world's current branch. Refuses if the
+/// world looks currently open in Minecraft, or if a merge is already in
+/// progress. A clean merge returns `Merged`; a conflicting one leaves the
+/// merge in progress (never silently discards anything) and returns the
+/// files that need resolving.
+#[tauri::command]
+pub async fn merge_world_branch(
+    instance_id: i64,
+    folder_name: String,
+    other_branch: String,
+    state: State<'_, AppState>,
+) -> Result<MergeOutcomeDto, String> {
+    let instances_dir = state.instances_dir.clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::merge_branch(&world_dir, &other_branch)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(match outcome {
+        mcgit_core::git::MergeOutcome::Merged(commit_hash) => MergeOutcomeDto::Merged { commit_hash },
+        mcgit_core::git::MergeOutcome::ConflictsPending(conflicts) => MergeOutcomeDto::ConflictsPending {
+            conflicts: conflicts.into_iter().map(ConflictedFileDto::from).collect(),
+        },
+    })
+}
+
+/// Resolves one conflicted file during an in-progress merge by keeping
+/// either this branch's version (`"ours"`) or the other branch's
+/// (`"theirs"`).
+#[tauri::command]
+pub async fn resolve_world_merge_conflict(
+    instance_id: i64,
+    folder_name: String,
+    path: String,
+    keep: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let side = match keep.as_str() {
+        "ours" => mcgit_core::git::Side::Ours,
+        "theirs" => mcgit_core::git::Side::Theirs,
+        other => return Err(format!("unknown side to keep: {other}")),
+    };
+    let instances_dir = state.instances_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::resolve_conflict(&world_dir, &path, side)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+/// Finishes an in-progress merge once every conflict has been resolved.
+/// Returns the new merge commit's hash.
+#[tauri::command]
+pub async fn finish_world_merge(
+    instance_id: i64,
+    folder_name: String,
+    message: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let instances_dir = state.instances_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::finish_merge(&world_dir, &message)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+/// Aborts an in-progress merge, restoring the world exactly to how it was
+/// before the merge started.
+#[tauri::command]
+pub async fn abort_world_merge(
+    instance_id: i64,
+    folder_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let instances_dir = state.instances_dir.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::abort_merge(&world_dir)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}

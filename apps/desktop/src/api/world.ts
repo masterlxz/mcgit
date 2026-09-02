@@ -89,3 +89,49 @@ export function diffWorldBranches(
 ): Promise<FileChange[]> {
   return invoke("diff_world_branches", { instanceId, folderName, otherBranch });
 }
+
+export function previewWorldMerge(
+  instanceId: number,
+  folderName: string,
+  otherBranch: string,
+): Promise<string[]> {
+  return invoke("preview_world_merge", { instanceId, folderName, otherBranch });
+}
+
+export type ConflictedFile = {
+  path: string;
+  kind: "both_modified" | "deleted_by_us" | "deleted_by_them";
+};
+
+export type MergeOutcome =
+  | { kind: "Merged"; commit_hash: string }
+  | { kind: "ConflictsPending"; conflicts: ConflictedFile[] };
+
+export function mergeWorldBranch(
+  instanceId: number,
+  folderName: string,
+  otherBranch: string,
+): Promise<MergeOutcome> {
+  return invoke("merge_world_branch", { instanceId, folderName, otherBranch });
+}
+
+export function resolveWorldMergeConflict(
+  instanceId: number,
+  folderName: string,
+  path: string,
+  keep: "ours" | "theirs",
+): Promise<void> {
+  return invoke("resolve_world_merge_conflict", { instanceId, folderName, path, keep });
+}
+
+export function finishWorldMerge(
+  instanceId: number,
+  folderName: string,
+  message: string,
+): Promise<string> {
+  return invoke("finish_world_merge", { instanceId, folderName, message });
+}
+
+export function abortWorldMerge(instanceId: number, folderName: string): Promise<void> {
+  return invoke("abort_world_merge", { instanceId, folderName });
+}
