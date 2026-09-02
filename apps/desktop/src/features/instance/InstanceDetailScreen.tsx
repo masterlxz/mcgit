@@ -21,12 +21,16 @@ import {
   restoreWorldVersion,
   switchWorldBranch,
   worldBlockStats,
+  worldEntityStats,
+  worldStructureStats,
   type BlockCount,
   type BlockDiff,
   type Branch,
   type ChunkDiff,
+  type EntityCount,
   type FileChange,
   type Snapshot,
+  type StructureCount,
   type World,
 } from "../../api/world";
 import { WorldList } from "../world/WorldList";
@@ -41,6 +45,12 @@ export function InstanceDetailScreen() {
   const [historyByWorld, setHistoryByWorld] = useState<Record<string, Snapshot[] | undefined>>({});
   const [blockStatsByWorld, setBlockStatsByWorld] = useState<
     Record<string, { hash: string; stats: BlockCount[] } | undefined>
+  >({});
+  const [structureStatsByWorld, setStructureStatsByWorld] = useState<
+    Record<string, { hash: string; stats: StructureCount[] } | undefined>
+  >({});
+  const [entityStatsByWorld, setEntityStatsByWorld] = useState<
+    Record<string, { hash: string; stats: EntityCount[] } | undefined>
   >({});
   const [branchesByWorld, setBranchesByWorld] = useState<Record<string, Branch[] | undefined>>({});
   const [diffsByWorld, setDiffsByWorld] = useState<
@@ -166,8 +176,14 @@ export function InstanceDetailScreen() {
   async function handleShowStats(folderName: string, hash: string) {
     setError(null);
     try {
-      const stats = await worldBlockStats(instanceId, folderName, hash);
-      setBlockStatsByWorld((prev) => ({ ...prev, [folderName]: { hash, stats } }));
+      const [blocks, structures, entities] = await Promise.all([
+        worldBlockStats(instanceId, folderName, hash),
+        worldStructureStats(instanceId, folderName, hash),
+        worldEntityStats(instanceId, folderName, hash),
+      ]);
+      setBlockStatsByWorld((prev) => ({ ...prev, [folderName]: { hash, stats: blocks } }));
+      setStructureStatsByWorld((prev) => ({ ...prev, [folderName]: { hash, stats: structures } }));
+      setEntityStatsByWorld((prev) => ({ ...prev, [folderName]: { hash, stats: entities } }));
     } catch (err) {
       setError(String(err));
     }
@@ -379,6 +395,8 @@ export function InstanceDetailScreen() {
         worlds={worlds}
         historyByWorld={historyByWorld}
         blockStatsByWorld={blockStatsByWorld}
+        structureStatsByWorld={structureStatsByWorld}
+        entityStatsByWorld={entityStatsByWorld}
         branchesByWorld={branchesByWorld}
         diffsByWorld={diffsByWorld}
         regionChunkDiffByWorld={regionChunkDiffByWorld}

@@ -1081,3 +1081,57 @@ Pendente pra mais adiante: passada de UX/identidade visual no app inteiro (regis
 não em `PENDING.md` — não é um bloqueio, é uma preferência de sequenciamento do usuário). Game
 Runner e login Microsoft seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo do
 CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 9 (segunda continuação) — 2026-09-02 — Fase 4: estatísticas de entidades e estruturas
+
+Retomada direta ("bora continuar?"), usuário escolheu via `AskUserQuestion` fechar o item de
+estatísticas da Fase 4 com os dois tipos que faltavam. Antes de codar, investigado ao vivo contra
+um chunk real do `medieval` (extensão temporária em `mca-bench inspect`): confirmado que entidades
+moram numa pasta própria desde a 1.17 (`entities/`, mesmo formato Anvil, raiz do chunk diferente —
+`Entities` em vez de `sections`), e que estruturas geradas ficam em `structures.starts` dentro do
+chunk de `region/`, aparecendo como "start" só no chunk onde começaram (chunks que a estrutura só
+atravessa têm uma referência de volta, não outro start) — então somar starts por tipo já dá a
+contagem certa sem duplicar. Confirmado com o usuário via `AskUserQuestion` antes de implementar.
+
+Implementado reaproveitando a estrutura da fatia de blocos: `count_chunk_structures`/
+`count_chunk_entities` em `mcgit-world::chunk`, `count_region_structures`/`count_region_entities`
+em `region.rs` (mesmo laço 32×32 de `count_region_blocks`). `mcgit-core` ganha
+`world_structure_stats`/`world_entity_stats`, com a soma/ordenação (antes duplicada em
+`world_block_stats`) extraída pra uma função privada compartilhada, `aggregate_region_stats`.
+Comandos Tauri `world_structure_stats`/`world_entity_stats`; UI: o painel "Show stats" já
+existente ganhou duas seções novas (Structures, Entities), buscadas em paralelo junto com Blocks
+no mesmo clique, com a renderização das três seções unificada num componente `StatsSection`.
+
+**Bug real achado e corrigido na verificação ao vivo**: contra o mundo `medieval` de verdade,
+`world_entity_stats` quebrou com `git command failed: ... UnexpectedEof, "failed to fill whole
+buffer"`. Investigação (não só leitura do erro) achou a causa: `entities/r.-2.-1.mca` é um
+arquivo de **0 bytes de verdade** — um placeholder real que o próprio Minecraft escreve pra uma
+região sem nada gerado ali ainda (mesmo padrão confirmado em `poi/` do mesmo mundo). Corrigido
+tratando um arquivo de região vazio como "zero entradas" (em vez de tentar abrir via
+`Region::from_stream`, que exige um cabeçalho Anvil de 8KB) nas três funções de contagem —
+inclusive `count_region_blocks`, que corria o mesmo risco por sorte ainda não exercitado. O mesmo
+risco estrutural existe em `diff_region_chunks` (Fase 4/6), não corrigido agora (fora do pedido
+desta sessão) e registrado em `ARCHITECTURE.md` §Débitos Técnicos.
+
+10 testes novos (`mcgit-world` +8: contagem de entidades/estruturas entre chunks e arquivo de
+0 bytes nas três funções; `mcgit-core` +2: agregação real via Git com múltiplos arquivos de
+`region/`/`entities/`), todos os 71 testes do workspace passando. Verificado ao vivo pela GUI
+real (`GDK_BACKEND=x11`/`xdotool`/`spectacle`, tela livre): antes do fix, erro genuíno na tela;
+depois, as três seções do painel "Show stats" populadas com dados reais do `medieval` — Blocks
+(já existente), Structures (18 mineshafts, 5 trial chambers, ocean ruins, ruined portals,
+shipwreck, monument, village) e Entities (110 sheep, 99 chickens, 60 pigs, 40 cows, mobs, item,
+bat, ...).
+
+Detalhes completos em `ARCHITECTURE.md` §Fase 4 (subseção "Estatísticas de mundo por snapshot —
+entidades e estruturas"); checklist fechado em `PHASE.md` Fase 4 (item de estatísticas agora
+`[x]`).
+
+**Estado ao final da sessão**: Fase 4 tem 3 dos 4 itens completos (diff por chunk `[~]` — ainda
+falta cobrir entidades/estruturas/Nether-End no diff, não só nas estatísticas; parser NBT
+completo `[x]`; estatísticas `[x]`, blocos+entidades+estruturas). Resta só visualização gráfica
+de verdade, ou virar pra Fase 2 (auto-snapshot/auto-gc), a critério do usuário. Pendente pra mais
+adiante: passada de UX/identidade visual no app inteiro (memória, não bloqueio). Game Runner e
+login Microsoft seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo do CurseForge
+segue em aberto, não urgente.

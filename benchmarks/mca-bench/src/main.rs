@@ -77,6 +77,26 @@ fn cmd_inspect(args: &[String]) -> Result<()> {
     }
 
     inspect_sections(map);
+
+    match map.get("block_entities") {
+        Some(Value::List(list)) => println!("block_entities: {} item(ns)", list.len()),
+        _ => println!("block_entities: ausente"),
+    }
+    if let Some(Value::List(list)) = map.get("block_entities") {
+        for entry in list.iter().take(5) {
+            println!("  {entry:?}");
+        }
+    }
+    match map.get("structures") {
+        Some(v) => println!("structures (raw): {v:?}"),
+        None => println!("structures: ausente"),
+    }
+    if let Some(Value::List(list)) = map.get("Entities") {
+        println!("Entities: {} item(ns)", list.len());
+        for entry in list.iter().take(5) {
+            println!("  {entry:?}");
+        }
+    }
     Ok(())
 }
 

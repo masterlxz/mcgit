@@ -249,6 +249,63 @@ pub(crate) fn count_chunk_blocks(nbt_bytes: &[u8], counts: &mut HashMap<String, 
     Ok(())
 }
 
+/// Tallies generated structures (villages, trial chambers, ...) in a
+/// `region/` chunk by type, into `counts`. Each structure instance is
+/// recorded once, in the single chunk where it started generating —
+/// `structures.starts` — never in the other chunks it merely spans (those
+/// only carry a back-reference to the start), so summing `starts` across
+/// every chunk in the world already gives an accurate per-type count with
+/// no double-counting. Missing `structures`/`starts` (should be rare, but
+/// not guaranteed on every chunk) is treated as "no structures here", not
+/// an error — unlike `count_chunk_blocks`, where a missing `sections` list
+/// means the chunk NBT itself is a shape we don't understand.
+pub(crate) fn count_chunk_structures(nbt_bytes: &[u8], counts: &mut HashMap<String, u64>) -> Result<(), WorldError> {
+    let chunk: Value = fastnbt::from_bytes(nbt_bytes)?;
+    let Value::Compound(chunk) = chunk else {
+        return Err(WorldError::Shape("chunk root is not a compound".into()));
+    };
+    let Some(Value::Compound(structures)) = chunk.get("structures") else {
+        return Ok(());
+    };
+    let Some(Value::Compound(starts)) = structures.get("starts") else {
+        return Ok(());
+    };
+
+    for id in starts.keys() {
+        *counts.entry(id.clone()).or_insert(0) += 1;
+    }
+    Ok(())
+}
+
+/// Tallies living entities (mobs, dropped items, projectiles, ...) in an
+/// `entities/` chunk by their `id` (e.g. `"minecraft:sheep"`), into
+/// `counts` — the rest of an entity's NBT (position, health, ...) is noise
+/// for a per-type count, same principle as `block_name` ignoring
+/// `Properties`. Since 1.17, entities live in their own region files under
+/// `entities/`, with a different chunk root shape than `region/`'s
+/// (`Entities` list instead of `sections`) — see `count_chunk_blocks` for
+/// that other shape. A missing or empty `Entities` list is treated as
+/// zero entities, not an error.
+pub(crate) fn count_chunk_entities(nbt_bytes: &[u8], counts: &mut HashMap<String, u64>) -> Result<(), WorldError> {
+    let chunk: Value = fastnbt::from_bytes(nbt_bytes)?;
+    let Value::Compound(chunk) = chunk else {
+        return Err(WorldError::Shape("chunk root is not a compound".into()));
+    };
+    let Some(Value::List(entities)) = chunk.get("Entities") else {
+        return Ok(());
+    };
+
+    for entity in entities {
+        let Value::Compound(entity) = entity else {
+            continue;
+        };
+        if let Some(Value::String(id)) = entity.get("id") {
+            *counts.entry(id.clone()).or_insert(0) += 1;
+        }
+    }
+    Ok(())
+}
+
 /// Diffs two versions of the same chunk's block data, block by block.
 /// `chunk_x`/`chunk_z` are the chunk's absolute coordinates (as reported by
 /// `diff_region_chunks`), used to turn each local position into an absolute

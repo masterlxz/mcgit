@@ -505,12 +505,50 @@ fn list_files(world_dir: &Path, git_ref: &str, prefix: &str) -> Result<Vec<Strin
 /// (Nether/End) or `entities/`/`poi/` — same scope as `diff_region_chunks`.
 pub fn world_block_stats(world_dir: &Path, git_ref: &str) -> Result<Vec<(String, u64)>, GitError> {
     let paths = list_files(world_dir, git_ref, "region/")?;
+    aggregate_region_stats(world_dir, git_ref, paths, |bytes| {
+        mcgit_world::count_region_blocks(bytes).map_err(|e| GitError::CommandFailed(e.to_string()))
+    })
+}
 
+/// Aggregates structure counts (by type, e.g. `"minecraft:trial_chambers"`)
+/// across every region file in `region/`, for the world as it existed at
+/// `git_ref` — same folder `world_block_stats` reads, since a chunk's
+/// generated-structure data lives alongside its blocks. Each structure
+/// instance counts once (see `count_chunk_structures`), sorted most common
+/// first.
+pub fn world_structure_stats(world_dir: &Path, git_ref: &str) -> Result<Vec<(String, u64)>, GitError> {
+    let paths = list_files(world_dir, git_ref, "region/")?;
+    aggregate_region_stats(world_dir, git_ref, paths, |bytes| {
+        mcgit_world::count_region_structures(bytes).map_err(|e| GitError::CommandFailed(e.to_string()))
+    })
+}
+
+/// Aggregates entity counts (by `id`, e.g. `"minecraft:sheep"`) across every
+/// region file in `entities/`, for the world as it existed at `git_ref` —
+/// mobs and dropped items live in their own folder, separate from `region/`
+/// (see `count_chunk_entities`). Sorted most common first.
+pub fn world_entity_stats(world_dir: &Path, git_ref: &str) -> Result<Vec<(String, u64)>, GitError> {
+    let paths = list_files(world_dir, git_ref, "entities/")?;
+    aggregate_region_stats(world_dir, git_ref, paths, |bytes| {
+        mcgit_world::count_region_entities(bytes).map_err(|e| GitError::CommandFailed(e.to_string()))
+    })
+}
+
+/// Shared plumbing behind `world_block_stats`/`world_structure_stats`/
+/// `world_entity_stats`: fetch each file's blob contents, hand it to
+/// `count_one_region`, and sum the resulting per-name counts across all of
+/// them — sorted most common first (ties broken by name, for a stable
+/// order).
+fn aggregate_region_stats(
+    world_dir: &Path,
+    git_ref: &str,
+    paths: Vec<String>,
+    count_one_region: impl Fn(&[u8]) -> Result<HashMap<String, u64>, GitError>,
+) -> Result<Vec<(String, u64)>, GitError> {
     let mut totals: HashMap<String, u64> = HashMap::new();
     for path in paths {
         let bytes = blob_contents(world_dir, git_ref, &path)?;
-        let counts =
-            mcgit_world::count_region_blocks(&bytes).map_err(|e| GitError::CommandFailed(e.to_string()))?;
+        let counts = count_one_region(&bytes)?;
         for (name, count) in counts {
             *totals.entry(name).or_insert(0) += count;
         }
@@ -1740,5 +1778,94 @@ mod tests {
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert_eq!(stats, vec![("minecraft:dirt".to_string(), 4096), ("minecraft:stone".to_string(), 4096)]);
+    }
+
+    /// Builds a region with one chunk that has a `structures.starts` entry
+    /// for `structure_id` — enough to exercise `world_structure_stats`
+    /// without a real village/trial chamber's full generation data.
+    fn build_region_with_structure_start(local_x: usize, local_z: usize, structure_id: &str) -> Vec<u8> {
+        use std::collections::HashMap;
+        use std::io::Cursor;
+
+        let mut starts = HashMap::new();
+        starts.insert(structure_id.to_string(), fastnbt::Value::Compound(HashMap::new()));
+        let mut structures = HashMap::new();
+        structures.insert("starts".to_string(), fastnbt::Value::Compound(starts));
+
+        let mut chunk = HashMap::new();
+        chunk.insert("structures".to_string(), fastnbt::Value::Compound(structures));
+        let bytes = fastnbt::to_bytes(&fastnbt::Value::Compound(chunk)).unwrap();
+
+        let mut region = fastanvil::Region::create(Cursor::new(Vec::new())).unwrap();
+        region.write_chunk(local_x, local_z, &bytes).unwrap();
+        region.into_inner().unwrap().into_inner()
+    }
+
+    #[test]
+    fn world_structure_stats_sums_across_region_files_sorted_most_common_first() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-structure-stats-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        std::fs::create_dir_all(world_dir.join("region")).unwrap();
+        init(&world_dir).unwrap();
+
+        let region_a = build_region_with_structure_start(0, 0, "minecraft:village_plains");
+        std::fs::write(world_dir.join("region").join("r.0.0.mca"), &region_a).unwrap();
+        // A second village start, in a second region file — confirms totals
+        // are summed across files, and that a single instance in each
+        // outranks a lone trial-chambers start below it.
+        let region_b = build_region_with_structure_start(0, 0, "minecraft:village_plains");
+        std::fs::write(world_dir.join("region").join("r.1.0.mca"), &region_b).unwrap();
+        let region_c = build_region_with_structure_start(0, 0, "minecraft:trial_chambers");
+        std::fs::write(world_dir.join("region").join("r.2.0.mca"), &region_c).unwrap();
+        commit(&world_dir, "Three regions").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+
+        let stats = world_structure_stats(&world_dir, &main).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(
+            stats,
+            vec![("minecraft:village_plains".to_string(), 2), ("minecraft:trial_chambers".to_string(), 1)]
+        );
+    }
+
+    /// Builds an `entities/`-shaped region (root `Entities` list, not
+    /// `sections`) with one chunk holding one entity of `id`.
+    fn build_region_with_entity(local_x: usize, local_z: usize, id: &str) -> Vec<u8> {
+        use std::collections::HashMap;
+        use std::io::Cursor;
+
+        let mut entity = HashMap::new();
+        entity.insert("id".to_string(), fastnbt::Value::String(id.to_string()));
+
+        let mut chunk = HashMap::new();
+        chunk.insert("Entities".to_string(), fastnbt::Value::List(vec![fastnbt::Value::Compound(entity)]));
+        let bytes = fastnbt::to_bytes(&fastnbt::Value::Compound(chunk)).unwrap();
+
+        let mut region = fastanvil::Region::create(Cursor::new(Vec::new())).unwrap();
+        region.write_chunk(local_x, local_z, &bytes).unwrap();
+        region.into_inner().unwrap().into_inner()
+    }
+
+    #[test]
+    fn world_entity_stats_sums_across_region_files_sorted_most_common_first() {
+        let world_dir = std::env::temp_dir().join(format!("mcgit-core-test-entity-stats-{}", std::process::id()));
+        std::fs::create_dir_all(&world_dir).unwrap();
+        std::fs::create_dir_all(world_dir.join("entities")).unwrap();
+        init(&world_dir).unwrap();
+
+        let region_a = build_region_with_entity(0, 0, "minecraft:sheep");
+        std::fs::write(world_dir.join("entities").join("r.0.0.mca"), &region_a).unwrap();
+        let region_b = build_region_with_entity(0, 0, "minecraft:sheep");
+        std::fs::write(world_dir.join("entities").join("r.1.0.mca"), &region_b).unwrap();
+        let region_c = build_region_with_entity(0, 0, "minecraft:cow");
+        std::fs::write(world_dir.join("entities").join("r.2.0.mca"), &region_c).unwrap();
+        commit(&world_dir, "Three entity regions").unwrap();
+        let main = current_branch(&world_dir).unwrap();
+
+        let stats = world_entity_stats(&world_dir, &main).unwrap();
+
+        std::fs::remove_dir_all(&world_dir).unwrap();
+        assert_eq!(stats, vec![("minecraft:sheep".to_string(), 2), ("minecraft:cow".to_string(), 1)]);
     }
 }

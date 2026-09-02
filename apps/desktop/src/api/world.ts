@@ -172,6 +172,32 @@ export function worldBlockStats(
   return invoke("world_block_stats", { instanceId, folderName, commitHash });
 }
 
+export type StructureCount = {
+  name: string;
+  count: number;
+};
+
+export function worldStructureStats(
+  instanceId: number,
+  folderName: string,
+  commitHash: string,
+): Promise<StructureCount[]> {
+  return invoke("world_structure_stats", { instanceId, folderName, commitHash });
+}
+
+export type EntityCount = {
+  name: string;
+  count: number;
+};
+
+export function worldEntityStats(
+  instanceId: number,
+  folderName: string,
+  commitHash: string,
+): Promise<EntityCount[]> {
+  return invoke("world_entity_stats", { instanceId, folderName, commitHash });
+}
+
 export function diffWorldChunkBlocks(
   instanceId: number,
   folderName: string,

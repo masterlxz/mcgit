@@ -3,7 +3,7 @@ use std::io::Cursor;
 
 use fastanvil::Region;
 
-use crate::chunk::count_chunk_blocks;
+use crate::chunk::{count_chunk_blocks, count_chunk_entities, count_chunk_structures};
 use crate::types::{ChunkDiff, ChunkStatus, WorldError};
 
 /// Extracts `(region_x, region_z)` from a region file's name, e.g.
@@ -59,7 +59,15 @@ pub fn diff_region_chunks(
 /// region file — a single snapshot's totals, not a diff between two. Cheap
 /// per section (see `count_chunk_blocks`), but still O(1024 chunks) per
 /// region file, since every generated chunk's NBT gets parsed once.
+///
+/// A 0-byte region file (real Minecraft behavior — a placeholder for a
+/// region with nothing generated in it yet, seen live in `entities/`/`poi/`
+/// but possible anywhere) has no valid Anvil header for `Region::from_stream`
+/// to read, so it's special-cased here as "no chunks" rather than an error.
 pub fn count_region_blocks(region_bytes: &[u8]) -> Result<HashMap<String, u64>, WorldError> {
+    if region_bytes.is_empty() {
+        return Ok(HashMap::new());
+    }
     let mut region = Region::from_stream(Cursor::new(region_bytes))?;
 
     let mut counts = HashMap::new();
@@ -69,6 +77,51 @@ pub fn count_region_blocks(region_bytes: &[u8]) -> Result<HashMap<String, u64>, 
                 continue;
             };
             count_chunk_blocks(&chunk_bytes, &mut counts)?;
+        }
+    }
+
+    Ok(counts)
+}
+
+/// Tallies generated structures (by type) across every chunk in one
+/// `region/` file — same shape and caller pattern as `count_region_blocks`,
+/// delegating the per-chunk decoding to `count_chunk_structures`.
+pub fn count_region_structures(region_bytes: &[u8]) -> Result<HashMap<String, u64>, WorldError> {
+    if region_bytes.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut region = Region::from_stream(Cursor::new(region_bytes))?;
+
+    let mut counts = HashMap::new();
+    for local_z in 0..32 {
+        for local_x in 0..32 {
+            let Some(chunk_bytes) = region.read_chunk(local_x, local_z)? else {
+                continue;
+            };
+            count_chunk_structures(&chunk_bytes, &mut counts)?;
+        }
+    }
+
+    Ok(counts)
+}
+
+/// Tallies living entities (by `id`) across every chunk in one `entities/`
+/// file — same shape as `count_region_blocks`/`count_region_structures`,
+/// but over the `entities/` folder's region files, whose chunks have a
+/// different NBT root (see `count_chunk_entities`).
+pub fn count_region_entities(region_bytes: &[u8]) -> Result<HashMap<String, u64>, WorldError> {
+    if region_bytes.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut region = Region::from_stream(Cursor::new(region_bytes))?;
+
+    let mut counts = HashMap::new();
+    for local_z in 0..32 {
+        for local_x in 0..32 {
+            let Some(chunk_bytes) = region.read_chunk(local_x, local_z)? else {
+                continue;
+            };
+            count_chunk_entities(&chunk_bytes, &mut counts)?;
         }
     }
 
@@ -204,6 +257,105 @@ mod tests {
         let bytes = build_region(&[]);
 
         let counts = count_region_blocks(&bytes).unwrap();
+
+        assert!(counts.is_empty());
+    }
+
+    /// A literal 0-byte file — the real placeholder Minecraft writes for a
+    /// region with nothing generated in it yet — is a different case from
+    /// `build_region(&[])` above (a *valid* header, just zero chunks): it
+    /// has no Anvil header at all, and should be treated as "no chunks",
+    /// not an error.
+    #[test]
+    fn count_region_blocks_on_zero_byte_file_returns_empty() {
+        let counts = count_region_blocks(&[]).unwrap();
+
+        assert!(counts.is_empty());
+    }
+
+    /// A `region/`-shaped chunk with a "starts" entry for `structure_id` —
+    /// enough to exercise structure counting without a real village/trial
+    /// chamber's full (and irrelevant, for counting) generation data.
+    fn chunk_with_structure_start(structure_id: &str) -> Vec<u8> {
+        let mut starts = HashMap::new();
+        starts.insert(structure_id.to_string(), fastnbt::Value::Compound(HashMap::new()));
+        let mut structures = HashMap::new();
+        structures.insert("starts".to_string(), fastnbt::Value::Compound(starts));
+
+        let mut chunk = HashMap::new();
+        chunk.insert("structures".to_string(), fastnbt::Value::Compound(structures));
+        fastnbt::to_bytes(&fastnbt::Value::Compound(chunk)).unwrap()
+    }
+
+    #[test]
+    fn count_region_structures_sums_across_multiple_chunks() {
+        let mut region = Region::create(Cursor::new(Vec::new())).unwrap();
+        region.write_chunk(0, 0, &chunk_with_structure_start("minecraft:village_plains")).unwrap();
+        region.write_chunk(5, 0, &chunk_with_structure_start("minecraft:village_plains")).unwrap();
+        region.write_chunk(10, 10, &chunk_with_structure_start("minecraft:trial_chambers")).unwrap();
+        let bytes = region.into_inner().unwrap().into_inner();
+
+        let counts = count_region_structures(&bytes).unwrap();
+
+        assert_eq!(counts["minecraft:village_plains"], 2);
+        assert_eq!(counts["minecraft:trial_chambers"], 1);
+    }
+
+    #[test]
+    fn count_region_structures_ignores_chunks_with_no_structures_key() {
+        let mut region = Region::create(Cursor::new(Vec::new())).unwrap();
+        region.write_chunk(0, 0, &minimal_chunk_nbt(1)).unwrap();
+        let bytes = region.into_inner().unwrap().into_inner();
+
+        let counts = count_region_structures(&bytes).unwrap();
+
+        assert!(counts.is_empty());
+    }
+
+    #[test]
+    fn count_region_structures_on_zero_byte_file_returns_empty() {
+        let counts = count_region_structures(&[]).unwrap();
+
+        assert!(counts.is_empty());
+    }
+
+    /// An `entities/`-shaped chunk (root `Entities` list, not `sections`)
+    /// with one entity of `id`.
+    fn entity_chunk(id: &str) -> Vec<u8> {
+        let mut entity = HashMap::new();
+        entity.insert("id".to_string(), fastnbt::Value::String(id.to_string()));
+
+        let mut chunk = HashMap::new();
+        chunk.insert("Entities".to_string(), fastnbt::Value::List(vec![fastnbt::Value::Compound(entity)]));
+        fastnbt::to_bytes(&fastnbt::Value::Compound(chunk)).unwrap()
+    }
+
+    #[test]
+    fn count_region_entities_sums_across_multiple_chunks() {
+        let mut region = Region::create(Cursor::new(Vec::new())).unwrap();
+        region.write_chunk(0, 0, &entity_chunk("minecraft:sheep")).unwrap();
+        region.write_chunk(1, 0, &entity_chunk("minecraft:sheep")).unwrap();
+        region.write_chunk(2, 0, &entity_chunk("minecraft:cow")).unwrap();
+        let bytes = region.into_inner().unwrap().into_inner();
+
+        let counts = count_region_entities(&bytes).unwrap();
+
+        assert_eq!(counts["minecraft:sheep"], 2);
+        assert_eq!(counts["minecraft:cow"], 1);
+    }
+
+    #[test]
+    fn count_region_entities_on_empty_region_returns_empty() {
+        let bytes = build_region(&[]);
+
+        let counts = count_region_entities(&bytes).unwrap();
+
+        assert!(counts.is_empty());
+    }
+
+    #[test]
+    fn count_region_entities_on_zero_byte_file_returns_empty() {
+        let counts = count_region_entities(&[]).unwrap();
 
         assert!(counts.is_empty());
     }

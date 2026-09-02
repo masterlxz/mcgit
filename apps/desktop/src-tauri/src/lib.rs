@@ -68,6 +68,8 @@ pub fn run() {
             commands::world::diff_world_region_chunks,
             commands::world::diff_world_chunk_blocks,
             commands::world::world_block_stats,
+            commands::world::world_structure_stats,
+            commands::world::world_entity_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

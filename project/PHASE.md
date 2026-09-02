@@ -310,17 +310,31 @@ Antiga "Fase 3 — Minecraft-aware" do mcgit-ferramenta (v1.0).
   `diff_world_chunk_blocks`, botão "Show blocks" na UI (dentro do "Show chunks" já existente).
   Verificado ao vivo pela GUI real, num mundo real com um bloco editado numa branch. Detalhes
   completos em `ARCHITECTURE.md` §Fase 4.
-- [~] Estatísticas de mundo por snapshot (blocos, entidades, estruturas) — blocos implementados
+- [x] Estatísticas de mundo por snapshot (blocos, entidades, estruturas) — blocos implementados
   (Sessão 9, 2026-09-02): conta cada tipo de bloco (por `Name`, ignorando `Properties` — decisão
   deliberada, diferente do diff, porque "quantos `stone`" não deveria separar variante nenhuma)
   em todo o `region/` de um snapshot, somando entre todos os arquivos de região, ordenado do mais
   comum pro menos comum. Reaproveita o mesmo decoder do item anterior, mas contando em vez de
   comparando — sem materializar os 4096 blocos por seção, só os índices decodificados são
-  somados por posição de palette. Entidades e estruturas ainda não cobertas (só a pasta `region/`
-  principal). Novo comando Tauri `world_block_stats`, botão "Show stats" por snapshot na tela de
-  histórico (`WorldHistory`, disponível também no Modo Básico, não só Avançado). Verificado ao
-  vivo pela GUI real contra um mundo real (`medieval`). Detalhes completos em `ARCHITECTURE.md`
-  §Fase 4.
+  somados por posição de palette. Novo comando Tauri `world_block_stats`, botão "Show stats" por
+  snapshot na tela de histórico (`WorldHistory`, disponível também no Modo Básico, não só
+  Avançado). Verificado ao vivo pela GUI real contra um mundo real (`medieval`).
+  **Entidades e estruturas fechados na mesma sessão (continuação, 2026-09-02)**: entidades
+  contadas por `id` (mobs, itens no chão, ...) somando todos os arquivos de `entities/` — pasta
+  separada de `region/` desde a 1.17, formato Anvil igual mas raiz do chunk diferente (`Entities`
+  em vez de `sections`). Estruturas contadas por tipo somando a chave `structures.starts` de
+  cada chunk em `region/` — cada estrutura gerada aparece como "start" só no chunk onde começou
+  (os outros que ela atravessa só têm uma referência de volta), então somar starts já dá a
+  contagem certa sem duplicar. Novos comandos Tauri `world_entity_stats`/`world_structure_stats`,
+  painel "Show stats" agora com três seções (Blocks/Structures/Entities). **Bug real achado e
+  corrigido na verificação ao vivo**: um arquivo `.mca` de 0 bytes (placeholder real que o
+  próprio Minecraft escreve pra uma região sem nada gerado ainda — visto de verdade em
+  `entities/`/`poi/` do mundo `medieval`) não tem cabeçalho Anvil válido, e `world_entity_stats`
+  quebrava com `UnexpectedEof` ao tentar abri-lo — corrigido tratando bytes vazios como "sem
+  entradas" nas três funções de contagem (`count_region_blocks/_structures/_entities`), não como
+  erro. Verificado ao vivo pela GUI real contra o mundo `medieval` de novo, agora as três seções
+  populadas com dados reais (18 mineshafts, 5 trial chambers, 110 sheep, etc.). Detalhes
+  completos em `ARCHITECTURE.md` §Fase 4.
 - [ ] Visualização de alterações entre snapshots (na GUI) — já existe uma versão mínima (lista
   textual de chunks alterados na tela de comparação de branches); uma visualização de verdade
   (mapa, destaque visual) ainda não foi feita.

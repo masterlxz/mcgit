@@ -671,3 +671,72 @@ pub async fn world_block_stats(
         .map(|(name, count)| BlockCountDto { name, count })
         .collect())
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StructureCountDto {
+    pub name: String,
+    pub count: u64,
+}
+
+/// Tallies every generated structure (villages, trial chambers, ...) by
+/// type across the world's `region/` folder as it existed at `commit_hash`
+/// — each instance counted once, at the chunk where it started generating.
+/// Sorted most common first.
+#[tauri::command]
+pub async fn world_structure_stats(
+    instance_id: i64,
+    folder_name: String,
+    commit_hash: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<StructureCountDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    let stats = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::world_structure_stats(&world_dir, &commit_hash)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(stats
+        .into_iter()
+        .map(|(name, count)| StructureCountDto { name, count })
+        .collect())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EntityCountDto {
+    pub name: String,
+    pub count: u64,
+}
+
+/// Tallies every living entity (mobs, dropped items, ...) by `id` across
+/// the world's `entities/` folder as it existed at `commit_hash`. Sorted
+/// most common first.
+#[tauri::command]
+pub async fn world_entity_stats(
+    instance_id: i64,
+    folder_name: String,
+    commit_hash: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<EntityCountDto>, String> {
+    let instances_dir = state.instances_dir.clone();
+    let stats = tauri::async_runtime::spawn_blocking(move || {
+        let world_dir = scaffold::instance_root(&instances_dir, instance_id)
+            .join("minecraft")
+            .join("saves")
+            .join(&folder_name);
+        mcgit_core::git::world_entity_stats(&world_dir, &commit_hash)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(stats
+        .into_iter()
+        .map(|(name, count)| EntityCountDto { name, count })
+        .collect())
+}

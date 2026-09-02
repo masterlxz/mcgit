@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { useAdvancedMode } from "../../context/AdvancedModeContext";
-import type { BlockCount, BlockDiff, Branch, ChunkDiff, FileChange, Snapshot, World } from "../../api/world";
+import type {
+  BlockCount,
+  BlockDiff,
+  Branch,
+  ChunkDiff,
+  EntityCount,
+  FileChange,
+  Snapshot,
+  StructureCount,
+  World,
+} from "../../api/world";
 import { SaveSnapshotForm } from "./SaveSnapshotForm";
 import { WorldHistory } from "./WorldHistory";
 import { WorldBranches, type MergeState } from "./WorldBranches";
@@ -9,6 +19,8 @@ type Props = {
   worlds: World[];
   historyByWorld: Record<string, Snapshot[] | undefined>;
   blockStatsByWorld: Record<string, { hash: string; stats: BlockCount[] } | undefined>;
+  structureStatsByWorld: Record<string, { hash: string; stats: StructureCount[] } | undefined>;
+  entityStatsByWorld: Record<string, { hash: string; stats: EntityCount[] } | undefined>;
   branchesByWorld: Record<string, Branch[] | undefined>;
   diffsByWorld: Record<string, { otherBranch: string; changes: FileChange[] } | undefined>;
   regionChunkDiffByWorld: Record<
@@ -51,6 +63,8 @@ export function WorldList({
   worlds,
   historyByWorld,
   blockStatsByWorld,
+  structureStatsByWorld,
+  entityStatsByWorld,
   branchesByWorld,
   diffsByWorld,
   regionChunkDiffByWorld,
@@ -127,6 +141,8 @@ export function WorldList({
                 <WorldHistory
                   snapshots={historyByWorld[world.folder_name] ?? []}
                   blockStats={blockStatsByWorld[world.folder_name]}
+                  structureStats={structureStatsByWorld[world.folder_name]}
+                  entityStats={entityStatsByWorld[world.folder_name]}
                   onRestore={(hash) => onRestore(world.folder_name, hash)}
                   onDelete={(hash) => onDelete(world.folder_name, hash)}
                   onShowStats={(hash) => onShowStats(world.folder_name, hash)}

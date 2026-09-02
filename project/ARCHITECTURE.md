@@ -984,8 +984,69 @@ mas como agregação em vez de diff.
   estatísticas do mundo atual não exige entender branches. Lista limitada a 20 tipos de bloco
   (já vem ordenada do mais comum, então o corte cobre a parte útil), com contagem formatada
   (`1.234 × minecraft:stone`).
-- **Fora de escopo desta fatia**: entidades e estruturas (só blocos); dimensões Nether/End e
-  `entities/`/`poi/` (mesmo escopo do `region/` principal já usado pelo resto da Fase 4).
+- **Fora de escopo desta fatia**: entidades e estruturas (só blocos) — fechado na continuação
+  logo abaixo; dimensões Nether/End (`DIM-1`/`DIM1`) seguem fora de escopo.
+
+### Estatísticas de mundo por snapshot — entidades e estruturas (Sessão 9, continuação, 2026-09-02)
+
+Fecha o item de estatísticas da Fase 4, contando os dois tipos que a fatia anterior deixou de
+fora. Antes de codar, investigado ao vivo contra um chunk real do `medieval` (extensão temporária
+em `mca-bench inspect`, removida depois de confirmar o formato) — dois achados moldaram o design:
+
+- **Entidades vivem em pasta separada.** Desde a 1.17, mobs/itens/projéteis não ficam mais dentro
+  do chunk NBT de `region/` — moraram pra uma pasta própria, `entities/`, com arquivos `.mca` no
+  mesmo formato Anvil, mas com raiz de chunk diferente: uma lista `Entities`, sem `sections`. Cada
+  entidade tem um campo `id` (ex. `minecraft:sheep`) — o resto (posição, vida, ...) é ruído pra uma
+  contagem por tipo, mesmo princípio do `block_name` que já ignora `Properties`.
+- **Estruturas geradas ficam dentro do chunk de `region/`, na chave `structures.starts`.** O
+  importante: cada estrutura aparece como "start" só no chunk onde começou a gerar — os outros
+  chunks que ela atravessa só têm uma referência de volta (`References`), não um segundo start.
+  Confirmado contra um trial chamber real que ocupa vários chunks. Consequência: somar as chaves
+  de `starts` (por tipo, ex. `minecraft:trial_chambers`) em todos os arquivos de região do mundo já
+  dá a contagem certa de instâncias, sem duplicar.
+
+- **`crates/mcgit-world/src/chunk.rs`**: `count_chunk_structures` (chunk de `region/`) lê
+  `structures.starts` e incrementa por chave; ausência de `structures`/`starts` conta como "sem
+  estruturas aqui", não erro — ao contrário de `count_chunk_blocks`, que exige `sections` (a
+  ausência ali indicaria um formato de chunk que o mcgit não entende). `count_chunk_entities`
+  (chunk de `entities/`) lê `Entities` e incrementa por `id`.
+- **`crates/mcgit-world/src/region.rs`**: `count_region_structures`/`count_region_entities` — mesmo
+  laço de 32×32 chunks de `count_region_blocks`, delegando a cada uma das funções acima.
+  **Guarda nova, achada na verificação ao vivo (ver abaixo)**: um arquivo de região de **0 bytes**
+  é tratado como "sem entradas" antes mesmo de tentar abrir via `Region::from_stream` — as três
+  funções de contagem (`count_region_blocks` incluída, retroativamente) ganharam essa guarda.
+- **`crates/mcgit-core`**: `world_structure_stats`/`world_entity_stats`, listando `region/` e
+  `entities/` respectivamente via `list_files` (já existente, genérica desde a fatia anterior).
+  A soma/ordenação (mais comum primeiro, empate por nome) era código idêntico repetido em três
+  funções — extraído pra `aggregate_region_stats`, uma função privada que recebe qual contador de
+  região usar (`count_one_region: impl Fn(&[u8]) -> Result<HashMap<String, u64>, GitError>`) e
+  cuida do resto (buscar blobs, somar, ordenar). `world_block_stats` também passou a usar essa
+  função compartilhada.
+- **Bug real achado na verificação ao vivo GUI, não no plano**: `world_entity_stats` quebrou contra
+  o mundo `medieval` de verdade com `git command failed: ... UnexpectedEof, "failed to fill whole
+  buffer"`. Investigado direto (não só lendo o erro): `entities/r.-2.-1.mca` é um arquivo de
+  **0 bytes de verdade** — o próprio Minecraft escreve isso como placeholder pra uma região sem
+  nada gerado ali ainda (confirmado também em `poi/` do mesmo mundo — mesmo padrão, pasta
+  diferente). `fastanvil::Region::from_stream` espera um cabeçalho Anvil de 8KB completo e não
+  tolera um arquivo vazio. Corrigido tratando `region_bytes.is_empty()` como "zero entradas" antes
+  de chamar `Region::from_stream`, nas três funções de `region.rs` (blocos incluído, pelo mesmo
+  risco, mesmo não tendo sido exercitado ali por sorte de dados). `diff_region_chunks` (Fase 6/4)
+  tem o mesmo risco estrutural — não corrigido aqui (fora do pedido desta sessão), registrado como
+  débito técnico.
+- **Testes**: `mcgit-world` (+3 exercitando o caso novo + 2 de arquivo de 0 bytes retroativos pras
+  três funções de contagem), `mcgit-core` (+2, histórico Git real com múltiplos arquivos de
+  `region/`/`entities/`, confirmando soma entre arquivos e ordenação).
+- **Ponte Tauri**: `world_structure_stats`/`world_entity_stats(instance_id, folder_name,
+  commit_hash)`, mesma assinatura de `world_block_stats`.
+- **UI**: o painel "Show stats" (já existente) ganhou duas seções novas, Structures e Entities,
+  buscadas em paralelo (`Promise.all`) junto com Blocks no mesmo clique — não são três botões
+  separados, é o mesmo "Show stats" mostrando mais coisa. Renderização das três seções unificada
+  num componente `StatsSection` (mesma forma `{name, count}` nos três casos).
+- **Verificado ao vivo pela GUI real** (`GDK_BACKEND=x11`/`xdotool`/`spectacle`, tela livre): antes
+  do fix, erro genuíno na tela ao clicar "Show stats" contra o mundo `medieval`; depois do fix,
+  as três seções populadas com dados reais — Structures (18 mineshafts, 5 trial chambers, ocean
+  ruins, ruined portals, shipwreck, monument, village) e Entities (110 sheep, 99 chickens, 60
+  pigs, 40 cows, mobs, item, bat, ...).
 
 **Verificado ao vivo pela GUI real** (mesmo app já rodando via `npx tauri dev`, hot-reload pegou
 as mudanças de back e frontend sem precisar reiniciar): usuário abriu "Show history" → "Show
@@ -1141,6 +1202,16 @@ conta aqui):
   esquecimento: o plano da feature Instância + Vanilla Install cobria só criar/listar. Uma
   instância `failed` ou que o usuário não quer mais fica no banco e em disco sem jeito de
   remover pela UI ainda.
+- **`diff_region_chunks`/`blob_size` não tratam um arquivo `.mca` de 0 bytes** (achado na
+  Sessão 9, continuação, 2026-09-02, ao corrigir o mesmo problema em `count_region_*`) — um
+  arquivo de região vazio é um placeholder real que o próprio Minecraft escreve (visto em
+  `entities/`/`poi/` do mundo `medieval`), não corrupção. `world_entity_stats`/`world_block_stats`/
+  `world_structure_stats` já tratam isso corretamente (bytes vazios = "sem entradas"), mas
+  `diff_region_chunks` (Fase 4/6, comparação de branches) ainda chamaria `Region::from_stream`
+  direto num lado vazio e quebraria com o mesmo `UnexpectedEof`. Não corrigido agora — fora do
+  pedido desta sessão (era sobre estatísticas, não diff) — mas é o mesmo risco estrutural, só
+  ainda não exercitado ao vivo por sorte de dados (nenhum arquivo de `region/` no mundo de teste
+  ficou vazio nas comparações já feitas).
 
 ---
 
