@@ -33,13 +33,11 @@ function StatsSection({
   }
   return (
     <li>
-      <strong>{title}</strong>
+      <h4>{title}</h4>
       {entries.length === 0 ? (
-        <ul>
-          <li>
-            <em>{emptyMessage}</em>
-          </li>
-        </ul>
+        <p>
+          <em>{emptyMessage}</em>
+        </p>
       ) : (
         <ul>
           {entries.slice(0, MAX_STATS_SHOWN).map((entry) => (
@@ -85,86 +83,97 @@ export function WorldHistory({
   }
 
   return (
-    <ul>
+    <ul className="snapshot-list">
       {snapshots.map((snapshot, index) => {
         const isTip = index === 0;
         const isConfirming = confirming?.hash === snapshot.hash ? confirming.action : null;
 
         return (
           <li key={snapshot.hash}>
-            <code>{advancedMode ? snapshot.hash : snapshot.hash.slice(0, 7)}</code> —{" "}
-            {new Date(snapshot.date).toLocaleString()} — {snapshot.message}
-            {advancedMode && (
-              <>
-                {" "}
-                — <em>mcgit &lt;mcgit@localhost&gt;</em>
-              </>
-            )}{" "}
+            <span className="snapshot-meta">
+              <code>{advancedMode ? snapshot.hash : snapshot.hash.slice(0, 7)}</code> —{" "}
+              {new Date(snapshot.date).toLocaleString()} — {snapshot.message}
+              {advancedMode && (
+                <>
+                  {" "}
+                  — <em>mcgit &lt;mcgit@localhost&gt;</em>
+                </>
+              )}
+            </span>
             {isConfirming === "restore" && (
-              <>
-                <em>This will replace the world's current state.</em>{" "}
-                <button onClick={() => setConfirming(null)}>Cancel</button>
-                <button
-                  onClick={() => {
-                    onRestore(snapshot.hash);
-                    setConfirming(null);
-                  }}
-                >
-                  Create Backup and Restore
-                </button>
-              </>
+              <div className="confirm-box">
+                <p>This will replace the world's current state.</p>
+                <div className="toolbar">
+                  <button onClick={() => setConfirming(null)}>Cancel</button>
+                  <button
+                    className="btn-primary"
+                    onClick={() => {
+                      onRestore(snapshot.hash);
+                      setConfirming(null);
+                    }}
+                  >
+                    Create Backup and Restore
+                  </button>
+                </div>
+              </div>
             )}
             {isConfirming === "delete" && (
-              <>
-                <em>
+              <div className="confirm-box">
+                <p>
                   {isTip && snapshots.length > 1
                     ? "This is your most recent snapshot. Deleting it will also reset the world's files to the previous snapshot's state."
                     : isTip
                       ? "This is your only snapshot. Deleting it removes all version history for this world (your current files won't be touched)."
                       : "This will permanently remove this snapshot. This cannot be undone."}
-                </em>{" "}
-                <button onClick={() => setConfirming(null)}>Cancel</button>
-                <button
-                  onClick={() => {
-                    onDelete(snapshot.hash);
-                    setConfirming(null);
-                  }}
-                >
-                  Delete snapshot
-                </button>
-              </>
+                </p>
+                <div className="toolbar">
+                  <button onClick={() => setConfirming(null)}>Cancel</button>
+                  <button
+                    className="btn-danger"
+                    onClick={() => {
+                      onDelete(snapshot.hash);
+                      setConfirming(null);
+                    }}
+                  >
+                    Delete snapshot
+                  </button>
+                </div>
+              </div>
             )}
             {!isConfirming && (
-              <>
+              <div className="toolbar">
                 <button onClick={() => setConfirming({ hash: snapshot.hash, action: "restore" })}>
                   Restore
                 </button>
-                <button onClick={() => setConfirming({ hash: snapshot.hash, action: "delete" })}>
+                <button
+                  className="btn-danger"
+                  onClick={() => setConfirming({ hash: snapshot.hash, action: "delete" })}
+                >
                   Delete
                 </button>
                 <button onClick={() => toggleStats(snapshot.hash)}>
                   {openStatsFor === snapshot.hash ? "Hide stats" : "Show stats"}
                 </button>
-                {openStatsFor === snapshot.hash && (
-                  <ul>
-                    <StatsSection
-                      title="Blocks"
-                      emptyMessage="No blocks found (empty world, or no region files yet)."
-                      entries={blockStats?.hash === snapshot.hash ? blockStats.stats : undefined}
-                    />
-                    <StatsSection
-                      title="Structures"
-                      emptyMessage="No generated structures found."
-                      entries={structureStats?.hash === snapshot.hash ? structureStats.stats : undefined}
-                    />
-                    <StatsSection
-                      title="Entities"
-                      emptyMessage="No entities found."
-                      entries={entityStats?.hash === snapshot.hash ? entityStats.stats : undefined}
-                    />
-                  </ul>
-                )}
-              </>
+              </div>
+            )}
+            {!isConfirming && openStatsFor === snapshot.hash && (
+              <ul className="stats-columns">
+                <StatsSection
+                  title="Blocks"
+                  emptyMessage="No blocks found (empty world, or no region files yet)."
+                  entries={blockStats?.hash === snapshot.hash ? blockStats.stats : undefined}
+                />
+                <StatsSection
+                  title="Structures"
+                  emptyMessage="No generated structures found."
+                  entries={structureStats?.hash === snapshot.hash ? structureStats.stats : undefined}
+                />
+                <StatsSection
+                  title="Entities"
+                  emptyMessage="No entities found."
+                  entries={entityStats?.hash === snapshot.hash ? entityStats.stats : undefined}
+                />
+              </ul>
             )}
           </li>
         );

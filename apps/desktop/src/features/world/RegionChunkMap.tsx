@@ -3,10 +3,13 @@ import type { ChunkDiff } from "../../api/world";
 const CELL_SIZE = 11;
 const CELL_GAP = 1;
 
+/// CSS variable references, not literal colors — resolved by the browser
+/// against the design system's tokens (`App.css`), so the map follows
+/// light/dark mode the same way the rest of the app does.
 const STATUS_COLOR: Record<ChunkDiff["status"], string> = {
-  added: "#2e7d32",
-  removed: "#c62828",
-  changed: "#f9a825",
+  added: "var(--color-success)",
+  removed: "var(--color-danger)",
+  changed: "var(--color-warning)",
 };
 
 const STATUS_LABEL: Record<ChunkDiff["status"], string> = {
@@ -79,19 +82,10 @@ export function RegionChunkMap({ chunks, regionX, regionZ, openChunkKey, detailL
       >
         {cells}
       </div>
-      <p style={{ fontSize: "0.85em" }}>
+      <p className="chunk-map-legend">
         {(["added", "removed", "changed"] as const).map((status) => (
-          <span key={status} style={{ marginRight: 12 }}>
-            <span
-              style={{
-                display: "inline-block",
-                width: 10,
-                height: 10,
-                background: STATUS_COLOR[status],
-                marginRight: 4,
-                verticalAlign: "middle",
-              }}
-            />
+          <span key={status}>
+            <span className="swatch" style={{ background: STATUS_COLOR[status] }} />
             {STATUS_LABEL[status]}
           </span>
         ))}

@@ -182,6 +182,7 @@ export function WorldBranches({
   return (
     <div>
       <form
+        className="inline-form"
         onSubmit={(e) => {
           e.preventDefault();
           if (!newBranchName.trim()) return;
@@ -194,32 +195,37 @@ export function WorldBranches({
           onChange={(e) => setNewBranchName(e.target.value)}
           placeholder="New branch name"
         />
-        <button type="submit">Create branch</button>
+        <button type="submit" className="btn-primary">
+          Create branch
+        </button>
       </form>
 
-      <ul>
+      <ul className="branch-list">
         {branches.map((branch) => (
           <li key={branch.name}>
-            {branch.is_current ? <strong>{branch.name} (current)</strong> : branch.name}{" "}
+            {branch.is_current ? <strong>{branch.name} (current)</strong> : branch.name}
             {!branch.is_current && confirmingSwitchFor === branch.name && (
-              <>
-                <em>
+              <div className="confirm-box">
+                <p>
                   Switching branches changes the world's files. Any pending change on the
                   current branch is checkpointed automatically first.
-                </em>{" "}
-                <button onClick={() => setConfirmingSwitchFor(null)}>Cancel</button>
-                <button
-                  onClick={() => {
-                    onSwitch(branch.name);
-                    setConfirmingSwitchFor(null);
-                  }}
-                >
-                  Checkpoint and Switch
-                </button>
-              </>
+                </p>
+                <div className="toolbar">
+                  <button onClick={() => setConfirmingSwitchFor(null)}>Cancel</button>
+                  <button
+                    className="btn-primary"
+                    onClick={() => {
+                      onSwitch(branch.name);
+                      setConfirmingSwitchFor(null);
+                    }}
+                  >
+                    Checkpoint and Switch
+                  </button>
+                </div>
+              </div>
             )}
             {!branch.is_current && confirmingSwitchFor !== branch.name && (
-              <>
+              <div className="toolbar">
                 <button onClick={() => setConfirmingSwitchFor(branch.name)}>Switch</button>
                 <button onClick={() => toggleDiff(branch.name)}>
                   {openDiffFor === branch.name ? "Hide compare" : "Compare"}
@@ -227,10 +233,10 @@ export function WorldBranches({
                 {!mergeState && (
                   <button onClick={() => onPreviewMerge(branch.name)}>Merge</button>
                 )}
-              </>
+              </div>
             )}
             {!branch.is_current && openDiffFor === branch.name && (
-              <ul>
+              <ul className="subsection">
                 {diff && diff.otherBranch === branch.name && diff.changes.length === 0 && (
                   <li>
                     <em>No differences from the current branch.</em>
@@ -302,12 +308,12 @@ export function WorldBranches({
                                   />
                                 )}
                                 {openChunkDetailFor && openChunkX !== null && openChunkZ !== null && (
-                                  <div>
+                                  <div className="subsection">
                                     {regionKind === "blocks" && (
                                       <>
-                                        <p>
-                                          Blocks changed in chunk ({openChunkX}, {openChunkZ}):
-                                        </p>
+                                        <h4>
+                                          Blocks changed in chunk ({openChunkX}, {openChunkZ})
+                                        </h4>
                                         <ul>
                                           {thisChunkBlockDiff && thisChunkBlockDiff.blocks.length === 0 && (
                                             <li>
@@ -335,9 +341,9 @@ export function WorldBranches({
                                               </li>
                                             )}
                                         </ul>
-                                        <p>
-                                          Structures changed in chunk ({openChunkX}, {openChunkZ}):
-                                        </p>
+                                        <h4>
+                                          Structures changed in chunk ({openChunkX}, {openChunkZ})
+                                        </h4>
                                         <ul>
                                           {thisChunkStructureDiff && thisChunkStructureDiff.structures.length === 0 && (
                                             <li>
@@ -353,9 +359,9 @@ export function WorldBranches({
                                     )}
                                     {regionKind === "entities" && (
                                       <>
-                                        <p>
-                                          Entities changed in chunk ({openChunkX}, {openChunkZ}):
-                                        </p>
+                                        <h4>
+                                          Entities changed in chunk ({openChunkX}, {openChunkZ})
+                                        </h4>
                                         <ul>
                                           {thisChunkEntityDiff && thisChunkEntityDiff.entities.length === 0 && (
                                             <li>
@@ -383,48 +389,58 @@ export function WorldBranches({
             {mergeState &&
               mergeState.otherBranch === branch.name &&
               mergeState.phase === "preview" && (
-                <div>
-                  {mergeState.conflictingFiles.length === 0 ? (
-                    <em>No files would conflict — safe to merge.</em>
-                  ) : (
-                    <em>
-                      {mergeState.conflictingFiles.length} file
-                      {mergeState.conflictingFiles.length === 1 ? "" : "s"} would conflict:{" "}
-                      {mergeState.conflictingFiles.join(", ")}. You'll pick one branch's full
-                      version of each — the losing side's changes to that whole file are
-                      discarded.
-                    </em>
-                  )}{" "}
-                  <button onClick={onCancelMergePreview}>Cancel</button>
-                  <button onClick={() => onMerge(branch.name)}>
-                    {mergeState.conflictingFiles.length === 0 ? "Merge" : "Merge anyway"}
-                  </button>
+                <div className="confirm-box">
+                  <p>
+                    {mergeState.conflictingFiles.length === 0 ? (
+                      "No files would conflict — safe to merge."
+                    ) : (
+                      <>
+                        {mergeState.conflictingFiles.length} file
+                        {mergeState.conflictingFiles.length === 1 ? "" : "s"} would conflict:{" "}
+                        {mergeState.conflictingFiles.join(", ")}. You'll pick one branch's full
+                        version of each — the losing side's changes to that whole file are
+                        discarded.
+                      </>
+                    )}
+                  </p>
+                  <div className="toolbar">
+                    <button onClick={onCancelMergePreview}>Cancel</button>
+                    <button className="btn-primary" onClick={() => onMerge(branch.name)}>
+                      {mergeState.conflictingFiles.length === 0 ? "Merge" : "Merge anyway"}
+                    </button>
+                  </div>
                 </div>
               )}
             {mergeState &&
               mergeState.otherBranch === branch.name &&
               mergeState.phase === "resolving" && (
-                <div>
-                  <p>
-                    <em>Resolving merge with "{branch.name}":</em>
-                  </p>
+                <div className="subsection">
+                  <h4>Resolving merge with "{branch.name}"</h4>
                   <ul>
                     {mergeState.conflicts.map((conflict) => (
                       <li key={conflict.path}>
-                        {conflict.path} — <em>{describeConflictKind(conflict.kind)}</em>{" "}
-                        <button onClick={() => onResolveConflict(conflict.path, "ours")}>
-                          Keep this branch's version
-                        </button>
-                        <button onClick={() => onResolveConflict(conflict.path, "theirs")}>
-                          Keep the other branch's version
-                        </button>
+                        {conflict.path} — <em>{describeConflictKind(conflict.kind)}</em>
+                        <div className="toolbar">
+                          <button onClick={() => onResolveConflict(conflict.path, "ours")}>
+                            Keep this branch's version
+                          </button>
+                          <button onClick={() => onResolveConflict(conflict.path, "theirs")}>
+                            Keep the other branch's version
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
-                  <button onClick={onAbortMerge}>Abort merge</button>
-                  {mergeState.conflicts.length === 0 && (
-                    <button onClick={onFinishMerge}>Finish merge</button>
-                  )}
+                  <div className="toolbar">
+                    <button className="btn-danger" onClick={onAbortMerge}>
+                      Abort merge
+                    </button>
+                    {mergeState.conflicts.length === 0 && (
+                      <button className="btn-primary" onClick={onFinishMerge}>
+                        Finish merge
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
           </li>

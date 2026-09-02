@@ -1,11 +1,11 @@
-/* mcgit design system — red identity (Sessão 11, 2026-09-02).
+/* mcgit design system — red identity (Sessão 10, 2026-09-02; World screens
+   added in a second continuation the same day).
    Tokens first (light default, dark override via prefers-color-scheme —
    this app has no explicit theme switcher, so it follows the OS setting,
    same approach the Vite/Tauri template already used before this pass),
-   then base element styles, then small reusable layout/component classes
-   used by the primary screens (Instances, Instance detail chrome, Java).
-   World history/branches/stats keep today's plain markup and inherit the
-   base element styles for free — their own bespoke pass is a later slice. */
+   then base element styles, then small reusable layout/component classes —
+   first pass covered Instances/Instance detail chrome/Java; this pass adds
+   World history/branches/stats/the Fase 4 chunk map. */
 
 :root {
   --color-bg: #faf7f6;
@@ -431,4 +431,144 @@ button.btn-danger:hover:not(:disabled) {
 .progress-block progress::-moz-progress-bar {
   background-color: var(--color-primary);
   border-radius: 999px;
+}
+
+/* World versioning — one card per world (WorldList), nested boxes for
+   history/branches/stats/compare (WorldHistory, WorldBranches). Uses
+   the same visual language as .card/.install-list rather than inventing a
+   third one, since a world row is conceptually close to a Java install
+   row (one line of identity + actions), just with a lot more that can
+   expand underneath it. */
+.world-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-4) 0;
+}
+
+.world-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-surface);
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.world-item .world-name {
+  font-weight: 600;
+  margin-right: var(--space-2);
+}
+
+.world-item .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* A panel that expands under a toolbar (history list, branches list,
+   compare results, stats) — indented and set off with a left border so
+   it reads as "belongs to the row above" without a heavy nested card. */
+.subsection {
+  margin-top: var(--space-3);
+  padding: var(--space-3) 0 0 var(--space-3);
+  border-left: 2px solid var(--color-border);
+}
+
+.subsection h4 {
+  margin: 0 0 var(--space-2);
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+}
+
+.subsection ul {
+  padding-left: 1rem;
+}
+
+.snapshot-list,
+.branch-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.snapshot-list > li,
+.branch-list > li {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.snapshot-list > li:last-child,
+.branch-list > li:last-child {
+  border-bottom: none;
+}
+
+.snapshot-list .snapshot-meta {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+/* Inline confirmation prompt (restore/delete/switch branch/merge) — a
+   destructive or state-changing action never fires on the first click in
+   this app; this is what that "are you sure" moment looks like. */
+.confirm-box {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+}
+
+.confirm-box p {
+  margin: 0 0 var(--space-2);
+  font-size: 0.9rem;
+}
+
+.confirm-box .toolbar {
+  margin-top: 0;
+}
+
+.stats-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+  padding: 0;
+  margin: var(--space-2) 0 0;
+  list-style: none;
+}
+
+.stats-columns > li {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+}
+
+.stats-columns h4 {
+  margin: 0 0 var(--space-2);
+}
+
+.stats-columns ul {
+  padding-left: 1rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* Chunk map legend (Fase 4 — RegionChunkMap) */
+.chunk-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin: var(--space-2) 0;
+}
+
+.chunk-map-legend .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
 }

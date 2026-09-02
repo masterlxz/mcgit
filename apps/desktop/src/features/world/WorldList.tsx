@@ -154,74 +154,87 @@ export function WorldList({
   }
 
   return (
-    <ul>
+    <ul className="world-list">
       {worlds.map((world) => (
-        <li key={world.folder_name}>
-          {world.folder_name}
+        <li key={world.folder_name} className="world-item">
+          <span className="world-name">{world.folder_name}</span>
           {world.git_enabled ? (
             <>
-              <button onClick={() => onToggleVersioning(world.folder_name, false)}>
-                Disable versioning
-              </button>
-              <SaveSnapshotForm onSave={(message) => onSaveSnapshot(world.folder_name, message)} />
-              <button onClick={() => toggleHistory(world.folder_name)}>
-                {openHistoryFor.has(world.folder_name) ? "Hide history" : "Show history"}
-              </button>
-              {openHistoryFor.has(world.folder_name) && (
-                <WorldHistory
-                  snapshots={historyByWorld[world.folder_name] ?? []}
-                  blockStats={blockStatsByWorld[world.folder_name]}
-                  structureStats={structureStatsByWorld[world.folder_name]}
-                  entityStats={entityStatsByWorld[world.folder_name]}
-                  onRestore={(hash) => onRestore(world.folder_name, hash)}
-                  onDelete={(hash) => onDelete(world.folder_name, hash)}
-                  onShowStats={(hash) => onShowStats(world.folder_name, hash)}
-                />
-              )}
-              {advancedMode && (
-                <>
+              <div className="toolbar">
+                <SaveSnapshotForm onSave={(message) => onSaveSnapshot(world.folder_name, message)} />
+                <button onClick={() => toggleHistory(world.folder_name)}>
+                  {openHistoryFor.has(world.folder_name) ? "Hide history" : "Show history"}
+                </button>
+                {advancedMode && (
                   <button onClick={() => toggleBranches(world.folder_name)}>
                     {openBranchesFor.has(world.folder_name) ? "Hide branches" : "Show branches"}
                   </button>
+                )}
+                <button
+                  className="btn-danger"
+                  onClick={() => onToggleVersioning(world.folder_name, false)}
+                >
+                  Disable versioning
+                </button>
+              </div>
+              {openHistoryFor.has(world.folder_name) && (
+                <div className="subsection">
+                  <h4>History</h4>
+                  <WorldHistory
+                    snapshots={historyByWorld[world.folder_name] ?? []}
+                    blockStats={blockStatsByWorld[world.folder_name]}
+                    structureStats={structureStatsByWorld[world.folder_name]}
+                    entityStats={entityStatsByWorld[world.folder_name]}
+                    onRestore={(hash) => onRestore(world.folder_name, hash)}
+                    onDelete={(hash) => onDelete(world.folder_name, hash)}
+                    onShowStats={(hash) => onShowStats(world.folder_name, hash)}
+                  />
+                </div>
+              )}
+              {advancedMode && (
+                <>
                   {openBranchesFor.has(world.folder_name) && (
-                    <WorldBranches
-                      branches={branchesByWorld[world.folder_name] ?? []}
-                      diff={diffsByWorld[world.folder_name]}
-                      regionChunkDiff={regionChunkDiffByWorld[world.folder_name]}
-                      chunkBlockDiff={chunkBlockDiffByWorld[world.folder_name]}
-                      chunkStructureDiff={chunkStructureDiffByWorld[world.folder_name]}
-                      chunkEntityDiff={chunkEntityDiffByWorld[world.folder_name]}
-                      mergeState={mergeStateByWorld[world.folder_name]}
-                      onCreate={(name) => onCreateBranch(world.folder_name, name)}
-                      onSwitch={(name) => onSwitchBranch(world.folder_name, name)}
-                      onCompare={(name) => onCompareBranch(world.folder_name, name)}
-                      onShowRegionChunks={(otherBranch, path) =>
-                        onShowRegionChunks(world.folder_name, otherBranch, path)
-                      }
-                      onShowChunkBlocks={(otherBranch, path, chunkX, chunkZ) =>
-                        onShowChunkBlocks(world.folder_name, otherBranch, path, chunkX, chunkZ)
-                      }
-                      onShowChunkStructures={(otherBranch, path, chunkX, chunkZ) =>
-                        onShowChunkStructures(world.folder_name, otherBranch, path, chunkX, chunkZ)
-                      }
-                      onShowChunkEntities={(otherBranch, path, chunkX, chunkZ) =>
-                        onShowChunkEntities(world.folder_name, otherBranch, path, chunkX, chunkZ)
-                      }
-                      onPreviewMerge={(name) => onPreviewMerge(world.folder_name, name)}
-                      onCancelMergePreview={() => onCancelMergePreview(world.folder_name)}
-                      onMerge={(name) => onMerge(world.folder_name, name)}
-                      onResolveConflict={(path, keep) =>
-                        onResolveConflict(world.folder_name, path, keep)
-                      }
-                      onFinishMerge={() => onFinishMerge(world.folder_name)}
-                      onAbortMerge={() => onAbortMerge(world.folder_name)}
-                    />
+                    <div className="subsection">
+                      <h4>Branches</h4>
+                      <WorldBranches
+                        branches={branchesByWorld[world.folder_name] ?? []}
+                        diff={diffsByWorld[world.folder_name]}
+                        regionChunkDiff={regionChunkDiffByWorld[world.folder_name]}
+                        chunkBlockDiff={chunkBlockDiffByWorld[world.folder_name]}
+                        chunkStructureDiff={chunkStructureDiffByWorld[world.folder_name]}
+                        chunkEntityDiff={chunkEntityDiffByWorld[world.folder_name]}
+                        mergeState={mergeStateByWorld[world.folder_name]}
+                        onCreate={(name) => onCreateBranch(world.folder_name, name)}
+                        onSwitch={(name) => onSwitchBranch(world.folder_name, name)}
+                        onCompare={(name) => onCompareBranch(world.folder_name, name)}
+                        onShowRegionChunks={(otherBranch, path) =>
+                          onShowRegionChunks(world.folder_name, otherBranch, path)
+                        }
+                        onShowChunkBlocks={(otherBranch, path, chunkX, chunkZ) =>
+                          onShowChunkBlocks(world.folder_name, otherBranch, path, chunkX, chunkZ)
+                        }
+                        onShowChunkStructures={(otherBranch, path, chunkX, chunkZ) =>
+                          onShowChunkStructures(world.folder_name, otherBranch, path, chunkX, chunkZ)
+                        }
+                        onShowChunkEntities={(otherBranch, path, chunkX, chunkZ) =>
+                          onShowChunkEntities(world.folder_name, otherBranch, path, chunkX, chunkZ)
+                        }
+                        onPreviewMerge={(name) => onPreviewMerge(world.folder_name, name)}
+                        onCancelMergePreview={() => onCancelMergePreview(world.folder_name)}
+                        onMerge={(name) => onMerge(world.folder_name, name)}
+                        onResolveConflict={(path, keep) =>
+                          onResolveConflict(world.folder_name, path, keep)
+                        }
+                        onFinishMerge={() => onFinishMerge(world.folder_name)}
+                        onAbortMerge={() => onAbortMerge(world.folder_name)}
+                      />
+                    </div>
                   )}
                 </>
               )}
             </>
           ) : (
-            <button onClick={() => onToggleVersioning(world.folder_name, true)}>
+            <button className="btn-primary" onClick={() => onToggleVersioning(world.folder_name, true)}>
               Enable versioning
             </button>
           )}

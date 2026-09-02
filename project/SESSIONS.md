@@ -1271,3 +1271,43 @@ verificadas. Pendente pra uma fatia seguinte: `WorldList`/`WorldHistory`/`WorldB
 de stats/mapa de chunks da Fase 4 (só herdam a base hoje), ícone do app, favicon. Fase 4 segue
 completa (fechada mais cedo nesta mesma sessão). Login MS/Game Runner seguem pausados/bloqueados
 por `PENDING.md` #1; decisão de escopo do CurseForge segue em aberto, não urgente.
+
+---
+
+## Sessão 10 (segunda continuação) — 2026-09-02 — Identidade Visual: World versioning
+
+Retomada direta ("oq fazemos agora?"), usuário escolheu via `AskUserQuestion` continuar a
+passada de UX em vez de virar pra Fase 2 ou pro ícone do app — fecha o que tinha ficado
+pendente da fatia anterior: `WorldList`/`WorldHistory`/`WorldBranches`/o painel de stats/o mapa
+de chunks da Fase 4, que até aqui só herdavam a base do design system sem layout próprio, e os
+botões destrutivos (`Disable versioning`, `Delete`/`Delete snapshot`, `Abort merge`), que ainda
+não usavam a variante `.btn-danger` já definida (mas nunca aplicada) na fatia anterior.
+
+Classes novas em `App.css`: `.world-item` (card por mundo), `.subsection` (painel indentado com
+borda esquerda pra história/branches/compare/diff por chunk), `.snapshot-list`/`.branch-list`,
+`.confirm-box` (o "tem certeza?" antes de restore/delete/switch/merge, antes só texto solto),
+`.stats-columns` (o painel "Show stats" vira 3 colunas de card em vez de lista aninhada),
+`.chunk-map-legend`/`.swatch`. `RegionChunkMap.tsx` troca as cores hard-coded do mapa de chunks
+por `var(--color-success/-danger/-warning)` — os únicos tokens do design system ainda sem uso —
+pra que o mapa também respeite claro/escuro. Decisão de qual botão vira primário/perigo/neutro
+seguindo o mesmo princípio já documentado: `Save snapshot`/`Create branch`/`Merge`/`Finish
+merge`/etc. primários, `Disable versioning`/`Delete`/`Abort merge` perigo, o resto neutro.
+
+Zero Rust tocado; `npx tsc --noEmit` limpo. Verificado ao vivo pela GUI real
+(`GDK_BACKEND=x11`/`xdotool`/`spectacle -a`) contra o `TestWorld` já existente — card do mundo
+com os dois botões (primário sólido, perigo contornado) lado a lado; histórico expandido como
+`.subsection` com `Delete` em contorno vermelho; painel de stats em 3 colunas com dados reais
+(blocos/estruturas/entidades); branches expandido com o formulário de criar branch e a branch
+`experiment` listada; comparação e mapa de chunks 32×32 (legenda nos tokens de tema, célula
+`changed` em amarelo do modo escuro) funcionando e expandindo o mesmo diff bloco a bloco de
+sempre. Só navegação nesta verificação — nenhum snapshot/branch novo criado, `TestWorld`
+confirmado sem alterações via `git status`/`git log` no fixture ao final.
+
+Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System (subseção "Segunda
+continuação — World versioning").
+
+**Estado ao final da sessão**: a passada de UX cobre fundação + todas as telas principais do
+app (Instances, Instance detail, Java, World versioning completo). Só falta ícone do app e
+favicon — pendência menor, não urgente. Fase 4 segue completa (fechada mais cedo na mesma
+sessão). Login MS/Game Runner seguem pausados/bloqueados por `PENDING.md` #1; decisão de escopo
+do CurseForge segue em aberto, não urgente.

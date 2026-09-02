@@ -9,6 +9,7 @@ export function SaveSnapshotForm({ onSave }: Props) {
 
   return (
     <form
+      className="inline-form"
       onSubmit={(e) => {
         e.preventDefault();
         onSave(message.trim() || `Snapshot — ${new Date().toLocaleString()}`);
@@ -20,7 +21,9 @@ export function SaveSnapshotForm({ onSave }: Props) {
         onChange={(e) => setMessage(e.target.value)}
         placeholder="What changed? (optional)"
       />
-      <button type="submit">Save snapshot</button>
+      <button type="submit" className="btn-primary">
+        Save snapshot
+      </button>
     </form>
   );
 }

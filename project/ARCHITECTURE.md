@@ -1298,6 +1298,57 @@ telas principais (Instances, Instance detail chrome, Java) aplicadas e verificad
 uma fatia seguinte: `WorldList`/`WorldHistory`/`WorldBranches`/painel de stats/mapa de chunks da
 Fase 4 (hoje só herdam a base, sem layout/classe própria), ícone do app, favicon.
 
+### Segunda continuação — World versioning (mesma sessão, 2026-09-02)
+
+Fecha o restante deixado pendente acima: `WorldList`/`WorldHistory`/`WorldBranches`/o painel de
+stats/o mapa de chunks da Fase 4 ganham layout e classes próprias, e os botões destrutivos
+(`Disable versioning`, `Delete`/`Delete snapshot`, `Abort merge`) finalmente usam `.btn-danger`
+— a variante já existia no design system da primeira fatia mas não tinha nenhum uso real ainda.
+
+Classes novas em `App.css`: `.world-list`/`.world-item` (um card por mundo, mesma linguagem
+visual de `.card`/`.install-list`), `.subsection` (painel indentado com borda esquerda — história,
+branches, resultado de compare, diff por chunk — "isso pertence à linha acima" sem virar outro
+card pesado aninhado), `.snapshot-list`/`.branch-list` (linhas separadas por borda inferior),
+`.confirm-box` (o momento "tem certeza?" antes de restore/delete/switch/merge — sempre existiu
+como texto solto antes de um par de botões, agora é uma caixa com fundo/borda), `.stats-columns`
+(o painel "Show stats" vira 3 colunas de card — Blocks/Structures/Entities — em vez de uma lista
+`<ul>` aninhada única), `.chunk-map-legend`/`.swatch` (legenda do mapa de chunks da Fase 4).
+
+`RegionChunkMap.tsx` (Fase 4): as três cores do mapa (`added`/`removed`/`changed`) trocam de hex
+literal (`#2e7d32`/`#c62828`/`#f9a825`) pra `var(--color-success)`/`var(--color-danger)`/
+`var(--color-warning)` — os únicos tokens do design system ainda não usados em nenhum lugar até
+essa fatia — pra que o mapa também respeite claro/escuro como o resto do app, em vez de ficar com
+uma cor fixa que só por sorte combinava com o tema escuro.
+
+Decisões de qual botão vira `.btn-primary` vs `.btn-danger` vs neutro, aplicando o mesmo
+princípio já documentado na primeira fatia (primário = a ação que a tela mais quer, perigo =
+ação destrutiva ou que reverte progresso): `Save snapshot`/`Enable versioning`/`Create branch`/
+`Create Backup and Restore`/`Checkpoint and Switch`/`Merge`/`Merge anyway`/`Finish merge` viram
+`.btn-primary`; `Disable versioning`/`Delete`/`Delete snapshot`/`Abort merge` viram `.btn-danger`;
+`Restore`, `Switch`, `Compare`, `Show/Hide *`, `Cancel`, resolução de conflito (`Keep this/the
+other branch's version`) ficam neutros (não são a ação principal do momento, nem destrutivas).
+
+**Verificado ao vivo pela GUI real** (`GDK_BACKEND=x11`/`xdotool`/`spectacle -a`, `npx tauri dev`,
+mundo `TestWorld` já existente — só navegação, nenhum snapshot/branch novo criado): card do mundo
+com `Save snapshot` vermelho sólido e `Disable versioning` vermelho contornado lado a lado;
+"Show history" expandindo um `.subsection` com o snapshot existente, `Delete` em contorno
+vermelho; "Show stats" abrindo as 3 colunas de card com contagens reais (blocos, estruturas,
+entidades); "Show branches" abrindo `.subsection` com o formulário de criar branch e a branch
+`experiment` listada; "Compare" abrindo o resultado como `.subsection`; "Show chunks" abrindo o
+mapa 32×32 com a legenda em `.chunk-map-legend`, célula `changed` colorida pelo token
+`--color-warning` (tema escuro: amarelo claro `#ffd166`); clique na célula expandindo "Blocks
+changed in chunk (0, 0)"/"Structures changed in chunk (0, 0)" como `<h4>` dentro de outro
+`.subsection`, mesmo dado de sempre (`minecraft:deepslate[axis=y] → minecraft:stone`). Nenhuma
+mudança de dado/estado foi feita no `TestWorld` durante a verificação (confirmado via `git
+status`/`git log` no fixture depois — árvore limpa, mesmos dois commits de antes).
+
+`npx tsc --noEmit` limpo. Nenhum Rust tocado.
+
+**Estado ao final desta segunda continuação**: a passada de UX cobre agora fundação + todas as
+telas principais (Instances, Instance detail, Java, World versioning completo — histórico,
+branches, stats, diff por chunk da Fase 4). Só falta ícone do app e favicon, registrados como
+pendência menor, não urgente.
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial
