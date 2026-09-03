@@ -9,7 +9,7 @@ export function AddManualJavaForm({ onAdd }: Props) {
 
   return (
     <form
-      className="inline-form"
+      className="stacked-form"
       onSubmit={(e) => {
         e.preventDefault();
         if (path.trim()) {
@@ -24,7 +24,9 @@ export function AddManualJavaForm({ onAdd }: Props) {
         onChange={(e) => setPath(e.target.value)}
         placeholder="/path/to/java"
       />
-      <button type="submit">Add</button>
+      <button type="submit" className="btn-primary">
+        Add
+      </button>
     </form>
   );
 }

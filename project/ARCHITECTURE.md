@@ -1484,6 +1484,96 @@ sumiu, o dropdown ficou escuro com seta customizada e texto legível, o checkbox
 ficou vermelho em vez do teal/verde nativo do KDE Breeze. `npx tsc --noEmit` limpo (mudança só
 em CSS).
 
+### "Create instance" vira popover, depois modal centralizado + Settings + identidade de commit (mesma sessão, 2026-09-02)
+
+Primeira tentativa, pedido direto do usuário: "transforma o create instance em um popup no
+canto superior direito por favor, add instance algo assim". A seção "Create instance" (título +
+form inline, sempre visível abaixo da lista) virou um botão `+ Add instance` no canto superior
+direito da tela, abrindo um painel ancorado ao próprio botão (`.popover-anchor`/`.popover`,
+crescendo a partir do canto inferior do botão).
+
+O usuário reagiu mal a esse resultado ainda na mesma sessão ("tá bizarramente feio pra krl") e
+pediu 4 coisas de uma vez, resumidas como "simples mas fazem muita diferença": centralizar o
+popup de verdade (não mais ancorado num canto), aplicar o mesmo padrão de popup em outros
+lugares do app que hoje têm formulário de criar/adicionar sempre visível, simplificar a
+navegação movendo a tela de Java pra dentro de uma tela de Settings nova (acessível por uma
+engrenagem), e tornar a identidade de commit (nome/e-mail usados em todo `git commit`)
+configurável, pensando em quem for dar push pra um remoto que exige e-mail de verdade. Antes de
+implementar, uma pergunta foi feita ao usuário sobre se "Save snapshot" (a ação mais frequente
+do app, hoje inline na barra de ações do mundo) deveria virar popup também — resposta: não,
+fica inline, só ações de criar/adicionar algo (raras, de setup) viram popup.
+
+**Componente `Modal` (novo, substitui o padrão de popover)** — `apps/desktop/src/components/
+Modal.tsx` (primeiro componente genuinamente cross-feature do projeto, novo diretório
+`components/`). Sem prop `open` (quem usa já condiciona a renderização) e sem portal (app de
+janela única, `.modal-overlay` com `position: fixed; inset: 0` já cobre a viewport inteira).
+`.modal-overlay` escurece o fundo e fecha ao clicar nele (`onClick={onClose}`); a caixa
+`.modal` interna para a propagação do clique, então clicar dentro não fecha; um `useEffect`
+escuta `Escape` e chama `onClose()`. Substitui o `useRef`+`mousedown` que o popover usava pra
+detectar clique fora — mais simples e ganha fechar por Esc de graça. `App.css` perdeu o bloco
+`.popover-anchor`/`.popover`/`.popover-header`/`.popover-close` inteiro (nunca chegou a ser
+commitado, então não há regressão visível pra ninguém) e ganhou `.modal-overlay`/`.modal`/
+`.modal-header`/`.modal-close`. `.page-header h1 { margin-bottom: 0; }` generalizou pro
+seletor cobrir `h2`/`h3`/`h4` também, já que o padrão "heading + botão gatilho" passou a se
+repetir em mais telas com headings de outros níveis.
+
+**Padrão aplicado em mais lugares** — `InstanceManagerScreen.tsx` (Create instance),
+`WorldBranches.tsx` (Create branch, que ganhou seu próprio `.page-header` com `<h4>Branches</h4>`
++ botão "+ New branch", removido de `WorldList.tsx` que antes desenhava esse heading) e
+`JavaManagerScreen.tsx` (as duas seções "Install a Java version" e "Add manually", cada uma com
+seu próprio estado de abrir/fechar) — todos seguem o mesmo molde: botão abre, formulário em
+`.stacked-form` dentro do `Modal`, sucesso fecha o modal automaticamente. `.confirm-box`
+(confirmação de Restore/Delete/Abort merge/Disable versioning) não entrou nessa conversão — é
+um padrão diferente, de confirmação de ação destrutiva, não de criar algo novo.
+
+**Java vira seção de Settings** — nova tela `apps/desktop/src/features/settings/
+SettingsScreen.tsx` (`<h1>Settings</h1>` + `GitIdentitySettings` + `JavaManagerScreen`, este
+último rebaixado de `<h1>Java</h1>` pra `<h2>Java</h2>` já que deixou de ser tela própria).
+`App.tsx`: `<Link to="/java">Java</Link>` virou `<Link to="/settings" className="settings-link"
+title="Settings">⚙</Link>` — glifo Unicode, sem biblioteca de ícones, consistente com o app já
+usar `×`/`←` como símbolos inline.
+
+**Identidade de commit configurável** — até aqui todo commit usava `mcgit <mcgit@localhost>`,
+literal fixo em `ensure_identity()` (`crates/mcgit-core/src/git.rs`), sobrescrito sem pedir a
+cada commit. `mcgit-core` não ganhou dependência de `mcgit-db` (continua puro, subprocess-only);
+em vez disso `commit`/`restore`/`switch_branch`/`merge_branch`/`finish_merge` ganharam dois
+parâmetros novos (`commit_name: &str, commit_email: &str`), resolvidos por quem chama. Nova
+tabela `settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)` (migration
+`m20260902_000004_create_settings`) e entity `setting.rs` — primeira entity do projeto com PK
+`String` em vez de `id: i64` auto-increment (`#[sea_orm(primary_key, auto_increment = false)]`
+sobre um campo `String`). Módulo `crates/mcgit-db/src/settings.rs` expõe `get`/`set`/`delete` +
+`get_commit_identity` (resolve com defaults `mcgit`/`mcgit@localhost` aplicados, usado tanto
+pelo comando Tauri de leitura quanto por todo call site que precisa de identidade antes de
+commitar, pra nunca divergirem). Os 5 comandos Tauri que geram commit
+(`create_world_snapshot`/`restore_world_version`/`switch_world_branch`/`merge_world_branch`/
+`finish_world_merge`, em `commands/world.rs`) buscam a identidade em `state.db` antes do
+`spawn_blocking` (busca é async, `spawn_blocking` é síncrono) e passam os `String`s pro closure.
+Novos comandos `get_commit_identity`/`set_commit_identity` (`commands/settings.rs`) e UI
+`GitIdentitySettings.tsx` (form simples Name/Email + Save, dentro de Settings, fora do padrão de
+popup — é configuração persistente, não criação de algo).
+
+Bug real encontrado e corrigido durante a verificação ao vivo: `set_commit_identity` chamava
+`db_settings::set` incondicionalmente, então limpar os campos e salvar gravava strings vazias
+em vez de apagar as chaves — `get_commit_identity` só cai no default quando a chave está
+ausente (`None`), então `Some("")` quebrava silenciosamente todo commit seguinte com identidade
+em branco. Corrigido com `set_or_clear` (nova função em `mcgit-db::settings`, testada
+separadamente: valor em branco apaga a chave em vez de gravar vazio) usada pelos dois campos do
+comando `set_commit_identity`; `GitIdentitySettings.tsx` também passou a rebuscar a identidade
+via `getCommitIdentity()` depois de salvar, em vez de confiar no que acabou de ser digitado, pra
+mostrar o valor real em vigor (ex.: volta pra "mcgit" depois de limpar) e não um campo vazio que
+parece "nada configurado".
+
+Verificado ao vivo pela GUI real (`GDK_BACKEND=x11 npx tauri dev`): modal centralizado (não mais
+ancorado a canto), fecha no backdrop/Esc/×, aplicado em Instances/Branches/Java; engrenagem leva
+pra `/settings`, `/java` não existe mais como rota; "Save snapshot" continua inline, não virou
+popup. Identidade de commit testada ponta a ponta com um mundo real: trocar nome/e-mail em
+Settings, salvar, fazer uma ação que gera commit de verdade, e confirmar via `git log
+--format='%an <%ae>'` dentro do `.git` real do mundo que a identidade customizada foi usada — e,
+depois do fix, que limpar os campos e salvar de fato apaga as chaves no SQLite (não grava
+string vazia). `cargo build --workspace`, `cargo test --workspace` (100% verde, nenhuma lógica
+de teste mudou, só assinatura de ~100 call sites mecânicos em `git.rs`) e `npx tsc --noEmit`
+limpos.
+
 ---
 
 ## Schema do Banco Local (SQLite) — proposta inicial

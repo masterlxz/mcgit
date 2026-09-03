@@ -8,6 +8,7 @@ import {
   type InstanceInstallProgress,
   type McVersion,
 } from "../../api/instance";
+import { Modal } from "../../components/Modal";
 import { CreateInstanceForm } from "./CreateInstanceForm";
 import { InstanceInstallProgressBar } from "./InstanceInstallProgressBar";
 import { InstanceList } from "./InstanceList";
@@ -18,6 +19,7 @@ export function InstanceManagerScreen() {
   const [progress, setProgress] = useState<InstanceInstallProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -49,6 +51,7 @@ export function InstanceManagerScreen() {
     try {
       await createVanillaInstance(name, mcVersion);
       await refresh();
+      setShowCreateForm(false);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -59,16 +62,22 @@ export function InstanceManagerScreen() {
 
   return (
     <section>
-      <h1>Instances</h1>
+      <div className="page-header">
+        <h1>Instances</h1>
+        <button className="btn-primary" onClick={() => setShowCreateForm(true)}>
+          + Add instance
+        </button>
+      </div>
+      {showCreateForm && (
+        <Modal title="New instance" onClose={() => setShowCreateForm(false)}>
+          <CreateInstanceForm versions={mcVersions} onCreate={handleCreate} disabled={busy} />
+        </Modal>
+      )}
       {error && <p className="banner banner-error">{error}</p>}
 
       <InstanceList instances={instances} />
 
       {progress && <InstanceInstallProgressBar progress={progress} />}
-
-      <hr className="section-divider" />
-      <h2>Create instance</h2>
-      <CreateInstanceForm versions={mcVersions} onCreate={handleCreate} disabled={busy} />
     </section>
   );
 }

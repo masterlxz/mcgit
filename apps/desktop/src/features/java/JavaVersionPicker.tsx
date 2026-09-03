@@ -14,7 +14,7 @@ export function JavaVersionPicker({ versions, onInstall, disabled }: Props) {
   }
 
   return (
-    <div className="inline-form">
+    <div className="stacked-form">
       <select
         value={selected ?? ""}
         onChange={(e) => setSelected(Number(e.target.value))}

@@ -3,6 +3,7 @@ pub mod entities;
 pub mod instance;
 pub mod java;
 mod migrations;
+pub mod settings;
 pub mod world;
 
 pub use connection::{Db, DbError};

@@ -112,13 +112,16 @@ pub async fn create_world_snapshot(
     message: String,
     state: State<'_, AppState>,
 ) -> Result<SnapshotResultDto, String> {
+    let (commit_name, commit_email) = mcgit_db::settings::get_commit_identity(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
     let instances_dir = state.instances_dir.clone();
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         let world_dir = scaffold::instance_root(&instances_dir, instance_id)
             .join("minecraft")
             .join("saves")
             .join(&folder_name);
-        mcgit_core::git::commit(&world_dir, &message)
+        mcgit_core::git::commit(&world_dir, &message, &commit_name, &commit_email)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -191,13 +194,16 @@ pub async fn restore_world_version(
     commit_hash: String,
     state: State<'_, AppState>,
 ) -> Result<RestoreDto, String> {
+    let (commit_name, commit_email) = mcgit_db::settings::get_commit_identity(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
     let instances_dir = state.instances_dir.clone();
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         let world_dir = scaffold::instance_root(&instances_dir, instance_id)
             .join("minecraft")
             .join("saves")
             .join(&folder_name);
-        mcgit_core::git::restore(&world_dir, &commit_hash)
+        mcgit_core::git::restore(&world_dir, &commit_hash, &commit_name, &commit_email)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -314,13 +320,16 @@ pub async fn switch_world_branch(
     name: String,
     state: State<'_, AppState>,
 ) -> Result<SwitchDto, String> {
+    let (commit_name, commit_email) = mcgit_db::settings::get_commit_identity(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
     let instances_dir = state.instances_dir.clone();
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         let world_dir = scaffold::instance_root(&instances_dir, instance_id)
             .join("minecraft")
             .join("saves")
             .join(&folder_name);
-        mcgit_core::git::switch_branch(&world_dir, &name)
+        mcgit_core::git::switch_branch(&world_dir, &name, &commit_name, &commit_email)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -444,13 +453,16 @@ pub async fn merge_world_branch(
     other_branch: String,
     state: State<'_, AppState>,
 ) -> Result<MergeOutcomeDto, String> {
+    let (commit_name, commit_email) = mcgit_db::settings::get_commit_identity(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
     let instances_dir = state.instances_dir.clone();
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         let world_dir = scaffold::instance_root(&instances_dir, instance_id)
             .join("minecraft")
             .join("saves")
             .join(&folder_name);
-        mcgit_core::git::merge_branch(&world_dir, &other_branch)
+        mcgit_core::git::merge_branch(&world_dir, &other_branch, &commit_name, &commit_email)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -502,13 +514,16 @@ pub async fn finish_world_merge(
     message: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    let (commit_name, commit_email) = mcgit_db::settings::get_commit_identity(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
     let instances_dir = state.instances_dir.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let world_dir = scaffold::instance_root(&instances_dir, instance_id)
             .join("minecraft")
             .join("saves")
             .join(&folder_name);
-        mcgit_core::git::finish_merge(&world_dir, &message)
+        mcgit_core::git::finish_merge(&world_dir, &message, &commit_name, &commit_email)
     })
     .await
     .map_err(|e| e.to_string())?

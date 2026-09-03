@@ -2,7 +2,7 @@ import { HashRouter, Link, Route, Routes } from "react-router-dom";
 import { AdvancedModeProvider, useAdvancedMode } from "./context/AdvancedModeContext";
 import { InstanceDetailScreen } from "./features/instance/InstanceDetailScreen";
 import { InstanceManagerScreen } from "./features/instance/InstanceManagerScreen";
-import { JavaManagerScreen } from "./features/java/JavaManagerScreen";
+import { SettingsScreen } from "./features/settings/SettingsScreen";
 import "./App.css";
 
 function AdvancedModeToggle() {
@@ -30,14 +30,16 @@ function App() {
             </Link>
             <div className="nav-links">
               <Link to="/">Instances</Link>
-              <Link to="/java">Java</Link>
+              <Link to="/settings" className="settings-link" aria-label="Settings" title="Settings">
+                ⚙
+              </Link>
               <AdvancedModeToggle />
             </div>
           </nav>
           <Routes>
             <Route path="/" element={<InstanceManagerScreen />} />
             <Route path="/instances/:id" element={<InstanceDetailScreen />} />
-            <Route path="/java" element={<JavaManagerScreen />} />
+            <Route path="/settings" element={<SettingsScreen />} />
           </Routes>
         </main>
       </HashRouter>

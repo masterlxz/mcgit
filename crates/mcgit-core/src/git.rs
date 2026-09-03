@@ -74,17 +74,25 @@ pub enum CommitOutcome {
 /// work even on a machine that has never configured a global `user.name`/
 /// `user.email`. `--local` always wins over `--global`/`--system`, so this
 /// never touches the player's own identity if they happen to have one.
-fn ensure_identity(world_dir: &Path) -> Result<(), GitError> {
-    run(world_dir, &["config", "--local", "user.name", "mcgit"])?;
-    run(world_dir, &["config", "--local", "user.email", "mcgit@localhost"])?;
+/// `commit_name`/`commit_email` come from the caller (resolved from the
+/// `mcgit-db` `settings` table, defaulting to `mcgit`/`mcgit@localhost` —
+/// this crate itself stays free of any DB dependency, see `Cargo.toml`).
+fn ensure_identity(world_dir: &Path, commit_name: &str, commit_email: &str) -> Result<(), GitError> {
+    run(world_dir, &["config", "--local", "user.name", commit_name])?;
+    run(world_dir, &["config", "--local", "user.email", commit_email])?;
     Ok(())
 }
 
 /// Saves a snapshot of `world_dir`: stages every change and commits it with
 /// `message`. Returns `NothingToCommit` instead of an error when there's
 /// nothing staged, since that's a normal outcome, not a failure.
-pub fn commit(world_dir: &Path, message: &str) -> Result<CommitOutcome, GitError> {
-    ensure_identity(world_dir)?;
+pub fn commit(
+    world_dir: &Path,
+    message: &str,
+    commit_name: &str,
+    commit_email: &str,
+) -> Result<CommitOutcome, GitError> {
+    ensure_identity(world_dir, commit_name, commit_email)?;
     run(world_dir, &["add", "-A"])?;
 
     let status = run(world_dir, &["status", "--porcelain"])?;
@@ -175,16 +183,21 @@ pub struct RestoreOutcome {
 /// whatever's pending right now as a backup snapshot, (3) brings the files
 /// back to the old state, and (4) records that as a new snapshot on top —
 /// so restoring is itself always undoable by restoring again.
-pub fn restore(world_dir: &Path, commit_hash: &str) -> Result<RestoreOutcome, RestoreError> {
+pub fn restore(
+    world_dir: &Path,
+    commit_hash: &str,
+    commit_name: &str,
+    commit_email: &str,
+) -> Result<RestoreOutcome, RestoreError> {
     if is_currently_open(world_dir)? {
         return Err(RestoreError::WorldCurrentlyOpen);
     }
 
-    let backup = commit(world_dir, "Backup before restoring")?;
+    let backup = commit(world_dir, "Backup before restoring", commit_name, commit_email)?;
     run(world_dir, &["checkout", commit_hash, "--", "."])?;
 
     let short = &commit_hash[..commit_hash.len().min(7)];
-    let restore = commit(world_dir, &format!("Restored to {short}"))?;
+    let restore = commit(world_dir, &format!("Restored to {short}"), commit_name, commit_email)?;
 
     Ok(RestoreOutcome { backup, restore })
 }
@@ -351,12 +364,22 @@ pub struct SwitchOutcome {
 /// as a checkpoint, so a switch never fails because of "local changes would
 /// be overwritten" and never silently carries unrelated work onto the
 /// target branch.
-pub fn switch_branch(world_dir: &Path, name: &str) -> Result<SwitchOutcome, BranchError> {
+pub fn switch_branch(
+    world_dir: &Path,
+    name: &str,
+    commit_name: &str,
+    commit_email: &str,
+) -> Result<SwitchOutcome, BranchError> {
     if is_currently_open(world_dir)? {
         return Err(BranchError::WorldCurrentlyOpen);
     }
 
-    let checkpoint = commit(world_dir, "Checkpoint before switching branches")?;
+    let checkpoint = commit(
+        world_dir,
+        "Checkpoint before switching branches",
+        commit_name,
+        commit_email,
+    )?;
     run(world_dir, &["checkout", name])?;
 
     Ok(SwitchOutcome {
@@ -753,7 +776,12 @@ pub enum MergeOutcome {
 /// still unresolved — Git itself refuses a second `merge` in that state
 /// with a confusing generic error ("Exiting because of an unresolved
 /// conflict"), caught here with a clearer one instead.
-pub fn merge_branch(world_dir: &Path, other: &str) -> Result<MergeOutcome, MergeError> {
+pub fn merge_branch(
+    world_dir: &Path,
+    other: &str,
+    commit_name: &str,
+    commit_email: &str,
+) -> Result<MergeOutcome, MergeError> {
     if is_currently_open(world_dir)? {
         return Err(MergeError::WorldCurrentlyOpen);
     }
@@ -761,7 +789,7 @@ pub fn merge_branch(world_dir: &Path, other: &str) -> Result<MergeOutcome, Merge
         return Err(MergeError::AlreadyInProgress);
     }
 
-    ensure_identity(world_dir)?;
+    ensure_identity(world_dir, commit_name, commit_email)?;
     let output = Command::new("git")
         .args(["merge", other, "-m", &format!("Merge branch '{other}'")])
         .current_dir(world_dir)
@@ -828,8 +856,13 @@ pub fn resolve_conflict(world_dir: &Path, path: &str, keep: Side) -> Result<(), 
 /// Finishes an in-progress merge once every conflict has been resolved
 /// (staged via `resolve_conflict`). Doesn't `add -A` — only what was
 /// explicitly resolved should go into the merge commit.
-pub fn finish_merge(world_dir: &Path, message: &str) -> Result<String, GitError> {
-    ensure_identity(world_dir)?;
+pub fn finish_merge(
+    world_dir: &Path,
+    message: &str,
+    commit_name: &str,
+    commit_email: &str,
+) -> Result<String, GitError> {
+    ensure_identity(world_dir, commit_name, commit_email)?;
     run(world_dir, &["commit", "-m", message])?;
     let rev = run(world_dir, &["rev-parse", "HEAD"])?;
     Ok(trimmed_stdout(rev))
@@ -895,7 +928,7 @@ mod tests {
         let exclude = std::fs::read_to_string(world_dir.join(".git").join("info").join("exclude")).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
         std::fs::write(world_dir.join("session.lock"), b"").unwrap();
-        let outcome = commit(&world_dir, "First snapshot").unwrap();
+        let outcome = commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
         let tracked = Command::new("git")
             .args(["ls-files"])
             .current_dir(&world_dir)
@@ -917,7 +950,7 @@ mod tests {
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"fake world data").unwrap();
 
-        let outcome = commit(&world_dir, "First snapshot").unwrap();
+        let outcome = commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         match outcome {
@@ -932,9 +965,9 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"fake world data").unwrap();
-        commit(&world_dir, "First snapshot").unwrap();
+        commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
 
-        let second = commit(&world_dir, "Second snapshot").unwrap();
+        let second = commit(&world_dir, "Second snapshot", "Tester", "tester@example.com").unwrap();
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert_eq!(second, CommitOutcome::NothingToCommit);
@@ -946,7 +979,7 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
 
-        let outcome = commit(&world_dir, "Nothing here yet").unwrap();
+        let outcome = commit(&world_dir, "Nothing here yet", "Tester", "tester@example.com").unwrap();
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert_eq!(outcome, CommitOutcome::NothingToCommit);
@@ -981,7 +1014,7 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"fake world data").unwrap();
-        commit(&world_dir, "First snapshot").unwrap();
+        commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
 
         let history = log(&world_dir).unwrap();
 
@@ -997,9 +1030,9 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
-        commit(&world_dir, "First snapshot").unwrap();
+        commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"v2").unwrap();
-        commit(&world_dir, "Second snapshot").unwrap();
+        commit(&world_dir, "Second snapshot", "Tester", "tester@example.com").unwrap();
 
         let history = log(&world_dir).unwrap();
 
@@ -1015,15 +1048,15 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
-        let first = commit(&world_dir, "First snapshot").unwrap();
+        let first = commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"v2").unwrap();
-        commit(&world_dir, "Second snapshot").unwrap();
+        commit(&world_dir, "Second snapshot", "Tester", "tester@example.com").unwrap();
 
         let first_hash = match first {
             CommitOutcome::Created(hash) => hash,
             CommitOutcome::NothingToCommit => panic!("expected a commit"),
         };
-        let outcome = restore(&world_dir, &first_hash).unwrap();
+        let outcome = restore(&world_dir, &first_hash, "Tester", "tester@example.com").unwrap();
 
         let content = std::fs::read(world_dir.join("level.dat")).unwrap();
         std::fs::remove_dir_all(&world_dir).unwrap();
@@ -1041,7 +1074,7 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
-        let first = commit(&world_dir, "First snapshot").unwrap();
+        let first = commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
         let first_hash = match first {
             CommitOutcome::Created(hash) => hash,
             CommitOutcome::NothingToCommit => panic!("expected a commit"),
@@ -1049,7 +1082,7 @@ mod tests {
         // Pending, never-saved change.
         std::fs::write(world_dir.join("level.dat"), b"uncommitted").unwrap();
 
-        let outcome = restore(&world_dir, &first_hash).unwrap();
+        let outcome = restore(&world_dir, &first_hash, "Tester", "tester@example.com").unwrap();
 
         let history = log(&world_dir).unwrap();
         std::fs::remove_dir_all(&world_dir).unwrap();
@@ -1069,13 +1102,13 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
-        let first = commit(&world_dir, "First snapshot").unwrap();
+        let first = commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
         let first_hash = match first {
             CommitOutcome::Created(hash) => hash,
             CommitOutcome::NothingToCommit => panic!("expected a commit"),
         };
 
-        let outcome = restore(&world_dir, &first_hash).unwrap();
+        let outcome = restore(&world_dir, &first_hash, "Tester", "tester@example.com").unwrap();
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert_eq!(outcome.backup, CommitOutcome::NothingToCommit);
@@ -1088,9 +1121,9 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
-        commit(&world_dir, "First snapshot").unwrap();
+        commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
 
-        let result = restore(&world_dir, "0000000000000000000000000000000000000");
+        let result = restore(&world_dir, "0000000000000000000000000000000000000", "Tester", "tester@example.com");
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert!(matches!(result, Err(RestoreError::Git(_))));
@@ -1102,7 +1135,7 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"v1").unwrap();
-        let first = commit(&world_dir, "First snapshot").unwrap();
+        let first = commit(&world_dir, "First snapshot", "Tester", "tester@example.com").unwrap();
         let first_hash = match first {
             CommitOutcome::Created(hash) => hash,
             CommitOutcome::NothingToCommit => panic!("expected a commit"),
@@ -1112,7 +1145,7 @@ mod tests {
         let lock_file = std::fs::File::create(world_dir.join("session.lock")).unwrap();
         lock_file.lock().unwrap();
 
-        let result = restore(&world_dir, &first_hash);
+        let result = restore(&world_dir, &first_hash, "Tester", "tester@example.com");
         let history_len = log(&world_dir).unwrap().len();
 
         drop(lock_file);
@@ -1127,14 +1160,14 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"b").unwrap();
-        let b = match commit(&world_dir, "B").unwrap() {
+        let b = match commit(&world_dir, "B", "Tester", "tester@example.com").unwrap() {
             CommitOutcome::Created(hash) => hash,
             CommitOutcome::NothingToCommit => panic!("expected a commit"),
         };
         std::fs::write(world_dir.join("level.dat"), b"c").unwrap();
-        commit(&world_dir, "C").unwrap();
+        commit(&world_dir, "C", "Tester", "tester@example.com").unwrap();
 
         let before = log(&world_dir).unwrap();
         let c_date_before = before[0].date.clone();
@@ -1158,9 +1191,9 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"b").unwrap();
-        let b = match commit(&world_dir, "B").unwrap() {
+        let b = match commit(&world_dir, "B", "Tester", "tester@example.com").unwrap() {
             CommitOutcome::Created(hash) => hash,
             CommitOutcome::NothingToCommit => panic!("expected a commit"),
         };
@@ -1182,12 +1215,12 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        let a = match commit(&world_dir, "A").unwrap() {
+        let a = match commit(&world_dir, "A", "Tester", "tester@example.com").unwrap() {
             CommitOutcome::Created(hash) => hash,
             CommitOutcome::NothingToCommit => panic!("expected a commit"),
         };
         std::fs::write(world_dir.join("level.dat"), b"b").unwrap();
-        commit(&world_dir, "B").unwrap();
+        commit(&world_dir, "B", "Tester", "tester@example.com").unwrap();
 
         delete_snapshot(&world_dir, &a).unwrap();
 
@@ -1208,7 +1241,7 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"only").unwrap();
-        let only = match commit(&world_dir, "Only").unwrap() {
+        let only = match commit(&world_dir, "Only", "Tester", "tester@example.com").unwrap() {
             CommitOutcome::Created(hash) => hash,
             CommitOutcome::NothingToCommit => panic!("expected a commit"),
         };
@@ -1231,7 +1264,7 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
 
         let result = delete_snapshot(&world_dir, "0000000000000000000000000000000000000");
 
@@ -1245,7 +1278,7 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        let a = match commit(&world_dir, "A").unwrap() {
+        let a = match commit(&world_dir, "A", "Tester", "tester@example.com").unwrap() {
             CommitOutcome::Created(hash) => hash,
             CommitOutcome::NothingToCommit => panic!("expected a commit"),
         };
@@ -1268,7 +1301,7 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         let original = current_branch(&world_dir).unwrap();
 
         create_branch(&world_dir, "experiment").unwrap();
@@ -1300,15 +1333,15 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"main-content").unwrap();
-        commit(&world_dir, "Main content").unwrap();
+        commit(&world_dir, "Main content", "Tester", "tester@example.com").unwrap();
         let original = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"experiment-content").unwrap();
-        commit(&world_dir, "Experiment content").unwrap();
+        commit(&world_dir, "Experiment content", "Tester", "tester@example.com").unwrap();
         // Pending, never-saved change on the branch we're about to leave.
         std::fs::write(world_dir.join("level.dat"), b"uncommitted").unwrap();
 
-        let outcome = switch_branch(&world_dir, &original).unwrap();
+        let outcome = switch_branch(&world_dir, &original, "Tester", "tester@example.com").unwrap();
 
         let content = std::fs::read(world_dir.join("level.dat")).unwrap();
         let history = log(&world_dir).unwrap();
@@ -1328,11 +1361,11 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         let original = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
 
-        let outcome = switch_branch(&world_dir, &original).unwrap();
+        let outcome = switch_branch(&world_dir, &original, "Tester", "tester@example.com").unwrap();
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert_eq!(outcome.checkpoint, CommitOutcome::NothingToCommit);
@@ -1344,14 +1377,14 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         let original = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
 
         let lock_file = std::fs::File::create(world_dir.join("session.lock")).unwrap();
         lock_file.lock().unwrap();
 
-        let result = switch_branch(&world_dir, &original);
+        let result = switch_branch(&world_dir, &original, "Tester", "tester@example.com");
         let history_len = log(&world_dir).unwrap().len();
 
         drop(lock_file);
@@ -1366,10 +1399,10 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         let original = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment-1").unwrap();
-        switch_branch(&world_dir, &original).unwrap();
+        switch_branch(&world_dir, &original, "Tester", "tester@example.com").unwrap();
         create_branch(&world_dir, "experiment-2").unwrap();
 
         let branches = list_branches(&world_dir).unwrap();
@@ -1387,11 +1420,11 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("new_region.mca"), b"new file contents").unwrap();
-        commit(&world_dir, "Add region").unwrap();
+        commit(&world_dir, "Add region", "Tester", "tester@example.com").unwrap();
 
         let changes = diff_branches(&world_dir, &main, "experiment").unwrap();
 
@@ -1409,11 +1442,11 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"aaa").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"aaaaaaa").unwrap();
-        commit(&world_dir, "Grow level.dat").unwrap();
+        commit(&world_dir, "Grow level.dat", "Tester", "tester@example.com").unwrap();
 
         let changes = diff_branches(&world_dir, &main, "experiment").unwrap();
 
@@ -1432,11 +1465,11 @@ mod tests {
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
         std::fs::write(world_dir.join("old_region.mca"), b"gone soon").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::remove_file(world_dir.join("old_region.mca")).unwrap();
-        commit(&world_dir, "Remove region").unwrap();
+        commit(&world_dir, "Remove region", "Tester", "tester@example.com").unwrap();
 
         let changes = diff_branches(&world_dir, &main, "experiment").unwrap();
 
@@ -1454,7 +1487,7 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"a").unwrap();
-        commit(&world_dir, "A").unwrap();
+        commit(&world_dir, "A", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
 
@@ -1471,14 +1504,14 @@ mod tests {
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("r.0.0.mca"), b"base").unwrap();
         std::fs::write(world_dir.join("r.1.0.mca"), b"base").unwrap();
-        commit(&world_dir, "Base").unwrap();
+        commit(&world_dir, "Base", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("r.1.0.mca"), b"changed-on-experiment").unwrap();
-        commit(&world_dir, "Experiment change").unwrap();
-        switch_branch(&world_dir, &main).unwrap();
+        commit(&world_dir, "Experiment change", "Tester", "tester@example.com").unwrap();
+        switch_branch(&world_dir, &main, "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("r.0.0.mca"), b"changed-on-main").unwrap();
-        commit(&world_dir, "Main change").unwrap();
+        commit(&world_dir, "Main change", "Tester", "tester@example.com").unwrap();
 
         let conflicts = preview_merge(&world_dir, &main, "experiment").unwrap();
 
@@ -1492,14 +1525,14 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
-        commit(&world_dir, "Base").unwrap();
+        commit(&world_dir, "Base", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
-        commit(&world_dir, "Experiment change").unwrap();
-        switch_branch(&world_dir, &main).unwrap();
+        commit(&world_dir, "Experiment change", "Tester", "tester@example.com").unwrap();
+        switch_branch(&world_dir, &main, "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
-        commit(&world_dir, "Main change").unwrap();
+        commit(&world_dir, "Main change", "Tester", "tester@example.com").unwrap();
 
         let conflicts = preview_merge(&world_dir, &main, "experiment").unwrap();
 
@@ -1514,16 +1547,16 @@ mod tests {
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("r.0.0.mca"), b"base").unwrap();
         std::fs::write(world_dir.join("r.1.0.mca"), b"base").unwrap();
-        commit(&world_dir, "Base").unwrap();
+        commit(&world_dir, "Base", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("r.1.0.mca"), b"changed-on-experiment").unwrap();
-        commit(&world_dir, "Experiment change").unwrap();
-        switch_branch(&world_dir, &main).unwrap();
+        commit(&world_dir, "Experiment change", "Tester", "tester@example.com").unwrap();
+        switch_branch(&world_dir, &main, "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("r.0.0.mca"), b"changed-on-main").unwrap();
-        commit(&world_dir, "Main change").unwrap();
+        commit(&world_dir, "Main change", "Tester", "tester@example.com").unwrap();
 
-        let outcome = merge_branch(&world_dir, "experiment").unwrap();
+        let outcome = merge_branch(&world_dir, "experiment", "Tester", "tester@example.com").unwrap();
 
         let r00 = std::fs::read(world_dir.join("r.0.0.mca")).unwrap();
         let r10 = std::fs::read(world_dir.join("r.1.0.mca")).unwrap();
@@ -1539,16 +1572,16 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
-        commit(&world_dir, "Base").unwrap();
+        commit(&world_dir, "Base", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
-        commit(&world_dir, "Experiment change").unwrap();
-        switch_branch(&world_dir, &main).unwrap();
+        commit(&world_dir, "Experiment change", "Tester", "tester@example.com").unwrap();
+        switch_branch(&world_dir, &main, "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
-        commit(&world_dir, "Main change").unwrap();
+        commit(&world_dir, "Main change", "Tester", "tester@example.com").unwrap();
 
-        let outcome = merge_branch(&world_dir, "experiment").unwrap();
+        let outcome = merge_branch(&world_dir, "experiment", "Tester", "tester@example.com").unwrap();
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         match outcome {
@@ -1567,17 +1600,17 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
-        commit(&world_dir, "Base").unwrap();
+        commit(&world_dir, "Base", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
-        commit(&world_dir, "Experiment change").unwrap();
-        switch_branch(&world_dir, &main).unwrap();
+        commit(&world_dir, "Experiment change", "Tester", "tester@example.com").unwrap();
+        switch_branch(&world_dir, &main, "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
-        commit(&world_dir, "Main change").unwrap();
-        merge_branch(&world_dir, "experiment").unwrap(); // leaves a conflict in progress
+        commit(&world_dir, "Main change", "Tester", "tester@example.com").unwrap();
+        merge_branch(&world_dir, "experiment", "Tester", "tester@example.com").unwrap(); // leaves a conflict in progress
 
-        let result = merge_branch(&world_dir, "experiment");
+        let result = merge_branch(&world_dir, "experiment", "Tester", "tester@example.com");
 
         std::fs::remove_dir_all(&world_dir).unwrap();
         assert!(matches!(result, Err(MergeError::AlreadyInProgress)));
@@ -1589,17 +1622,17 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
-        commit(&world_dir, "Base").unwrap();
+        commit(&world_dir, "Base", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
-        commit(&world_dir, "Experiment change").unwrap();
-        switch_branch(&world_dir, &main).unwrap();
+        commit(&world_dir, "Experiment change", "Tester", "tester@example.com").unwrap();
+        switch_branch(&world_dir, &main, "Tester", "tester@example.com").unwrap();
 
         let lock_file = std::fs::File::create(world_dir.join("session.lock")).unwrap();
         lock_file.lock().unwrap();
 
-        let result = merge_branch(&world_dir, "experiment");
+        let result = merge_branch(&world_dir, "experiment", "Tester", "tester@example.com");
 
         drop(lock_file);
         std::fs::remove_dir_all(&world_dir).unwrap();
@@ -1612,18 +1645,18 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
-        commit(&world_dir, "Base").unwrap();
+        commit(&world_dir, "Base", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
-        commit(&world_dir, "Experiment change").unwrap();
-        switch_branch(&world_dir, &main).unwrap();
+        commit(&world_dir, "Experiment change", "Tester", "tester@example.com").unwrap();
+        switch_branch(&world_dir, &main, "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
-        commit(&world_dir, "Main change").unwrap();
-        merge_branch(&world_dir, "experiment").unwrap();
+        commit(&world_dir, "Main change", "Tester", "tester@example.com").unwrap();
+        merge_branch(&world_dir, "experiment", "Tester", "tester@example.com").unwrap();
 
         resolve_conflict(&world_dir, "level.dat", Side::Ours).unwrap();
-        let merge_hash = finish_merge(&world_dir, "Merge branch 'experiment'").unwrap();
+        let merge_hash = finish_merge(&world_dir, "Merge branch 'experiment'", "Tester", "tester@example.com").unwrap();
 
         let content = std::fs::read(world_dir.join("level.dat")).unwrap();
         let parents = run(&world_dir, &["log", "--format=%P", "-1", &merge_hash]).unwrap();
@@ -1645,15 +1678,15 @@ mod tests {
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
         std::fs::write(world_dir.join("r.0.0.mca"), b"base").unwrap();
-        commit(&world_dir, "Base").unwrap();
+        commit(&world_dir, "Base", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::remove_file(world_dir.join("r.0.0.mca")).unwrap();
-        commit(&world_dir, "Experiment deletes region").unwrap();
-        switch_branch(&world_dir, &main).unwrap();
+        commit(&world_dir, "Experiment deletes region", "Tester", "tester@example.com").unwrap();
+        switch_branch(&world_dir, &main, "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("r.0.0.mca"), b"changed-on-main").unwrap();
-        commit(&world_dir, "Main modifies region").unwrap();
-        let outcome = merge_branch(&world_dir, "experiment").unwrap();
+        commit(&world_dir, "Main modifies region", "Tester", "tester@example.com").unwrap();
+        let outcome = merge_branch(&world_dir, "experiment", "Tester", "tester@example.com").unwrap();
         let kind = match outcome {
             MergeOutcome::ConflictsPending(conflicts) => conflicts[0].kind,
             MergeOutcome::Merged(_) => panic!("expected a conflict"),
@@ -1662,7 +1695,7 @@ mod tests {
 
         // "theirs" (experiment) deleted the file — keeping theirs means accepting the deletion.
         resolve_conflict(&world_dir, "r.0.0.mca", Side::Theirs).unwrap();
-        finish_merge(&world_dir, "Merge branch 'experiment'").unwrap();
+        finish_merge(&world_dir, "Merge branch 'experiment'", "Tester", "tester@example.com").unwrap();
 
         let exists = world_dir.join("r.0.0.mca").exists();
         std::fs::remove_dir_all(&world_dir).unwrap();
@@ -1675,15 +1708,15 @@ mod tests {
         std::fs::create_dir_all(&world_dir).unwrap();
         init(&world_dir).unwrap();
         std::fs::write(world_dir.join("level.dat"), b"base").unwrap();
-        commit(&world_dir, "Base").unwrap();
+        commit(&world_dir, "Base", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-experiment").unwrap();
-        commit(&world_dir, "Experiment change").unwrap();
-        switch_branch(&world_dir, &main).unwrap();
+        commit(&world_dir, "Experiment change", "Tester", "tester@example.com").unwrap();
+        switch_branch(&world_dir, &main, "Tester", "tester@example.com").unwrap();
         std::fs::write(world_dir.join("level.dat"), b"changed-on-main").unwrap();
-        commit(&world_dir, "Main change").unwrap();
-        merge_branch(&world_dir, "experiment").unwrap();
+        commit(&world_dir, "Main change", "Tester", "tester@example.com").unwrap();
+        merge_branch(&world_dir, "experiment", "Tester", "tester@example.com").unwrap();
 
         abort_merge(&world_dir).unwrap();
 
@@ -1719,13 +1752,13 @@ mod tests {
 
         let base = build_region_bytes(&[(0, 0, 1), (5, 5, 1)]);
         std::fs::write(world_dir.join("region").join("r.0.0.mca"), &base).unwrap();
-        commit(&world_dir, "Base region").unwrap();
+        commit(&world_dir, "Base region", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
 
         let changed = build_region_bytes(&[(0, 0, 2), (5, 5, 1)]);
         std::fs::write(world_dir.join("region").join("r.0.0.mca"), &changed).unwrap();
-        commit(&world_dir, "Change chunk (0,0)").unwrap();
+        commit(&world_dir, "Change chunk (0,0)", "Tester", "tester@example.com").unwrap();
 
         let diffs = diff_region_chunks(&world_dir, &main, "experiment", "region/r.0.0.mca").unwrap();
 
@@ -1792,13 +1825,13 @@ mod tests {
 
         let base = build_region_with_chunk_block(0, 0, &["minecraft:stone", "minecraft:air"], 0);
         std::fs::write(world_dir.join("region").join("r.0.0.mca"), &base).unwrap();
-        commit(&world_dir, "Base region").unwrap();
+        commit(&world_dir, "Base region", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
 
         let changed = build_region_with_chunk_block(0, 0, &["minecraft:stone", "minecraft:air"], 1);
         std::fs::write(world_dir.join("region").join("r.0.0.mca"), &changed).unwrap();
-        commit(&world_dir, "Dig out chunk (0,0)").unwrap();
+        commit(&world_dir, "Dig out chunk (0,0)", "Tester", "tester@example.com").unwrap();
 
         let diffs = diff_chunk_blocks(&world_dir, &main, "experiment", "region/r.0.0.mca", 0, 0).unwrap();
 
@@ -1822,7 +1855,7 @@ mod tests {
         // totals are summed across files, not just within one.
         let region_b = build_region_with_chunk_block(0, 0, &["minecraft:dirt"], 0);
         std::fs::write(world_dir.join("region").join("r.1.0.mca"), &region_b).unwrap();
-        commit(&world_dir, "Two regions").unwrap();
+        commit(&world_dir, "Two regions", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
 
         let stats = world_block_stats(&world_dir, &main).unwrap();
@@ -1868,7 +1901,7 @@ mod tests {
         std::fs::write(world_dir.join("region").join("r.1.0.mca"), &region_b).unwrap();
         let region_c = build_region_with_structure_start(0, 0, "minecraft:trial_chambers");
         std::fs::write(world_dir.join("region").join("r.2.0.mca"), &region_c).unwrap();
-        commit(&world_dir, "Three regions").unwrap();
+        commit(&world_dir, "Three regions", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
 
         let stats = world_structure_stats(&world_dir, &main).unwrap();
@@ -1911,7 +1944,7 @@ mod tests {
         std::fs::write(world_dir.join("entities").join("r.1.0.mca"), &region_b).unwrap();
         let region_c = build_region_with_entity(0, 0, "minecraft:cow");
         std::fs::write(world_dir.join("entities").join("r.2.0.mca"), &region_c).unwrap();
-        commit(&world_dir, "Three entity regions").unwrap();
+        commit(&world_dir, "Three entity regions", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
 
         let stats = world_entity_stats(&world_dir, &main).unwrap();
@@ -1929,13 +1962,13 @@ mod tests {
 
         let base = build_region_with_structure_start(0, 0, "minecraft:mineshaft");
         std::fs::write(world_dir.join("region").join("r.0.0.mca"), &base).unwrap();
-        commit(&world_dir, "Base region").unwrap();
+        commit(&world_dir, "Base region", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
 
         let changed = build_region_with_structure_start(0, 0, "minecraft:village_plains");
         std::fs::write(world_dir.join("region").join("r.0.0.mca"), &changed).unwrap();
-        commit(&world_dir, "Different structure starts here now").unwrap();
+        commit(&world_dir, "Different structure starts here now", "Tester", "tester@example.com").unwrap();
 
         let diffs = diff_chunk_structures(&world_dir, &main, "experiment", "region/r.0.0.mca", 0, 0).unwrap();
 
@@ -1978,13 +2011,13 @@ mod tests {
 
         let base = build_region_with_entity_uuid(0, 0, "minecraft:sheep", [1, 2, 3, 4]);
         std::fs::write(world_dir.join("entities").join("r.0.0.mca"), &base).unwrap();
-        commit(&world_dir, "Base region").unwrap();
+        commit(&world_dir, "Base region", "Tester", "tester@example.com").unwrap();
         let main = current_branch(&world_dir).unwrap();
         create_branch(&world_dir, "experiment").unwrap();
 
         let changed = build_region_with_entity_uuid(0, 0, "minecraft:cow", [5, 6, 7, 8]);
         std::fs::write(world_dir.join("entities").join("r.0.0.mca"), &changed).unwrap();
-        commit(&world_dir, "Sheep left, cow arrived").unwrap();
+        commit(&world_dir, "Sheep left, cow arrived", "Tester", "tester@example.com").unwrap();
 
         let diffs = diff_chunk_entities(&world_dir, &main, "experiment", "entities/r.0.0.mca", 0, 0).unwrap();
 

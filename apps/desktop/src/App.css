@@ -313,6 +313,11 @@ button.btn-danger:hover:not(:disabled) {
   color: var(--color-text);
 }
 
+.app-nav .settings-link {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
 .advanced-mode-toggle {
   display: inline-flex;
   align-items: center;
@@ -324,10 +329,84 @@ button.btn-danger:hover:not(:disabled) {
 /* Page chrome shared by the primary screens */
 .page-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
   margin-bottom: var(--space-4);
+}
+
+.page-header h1,
+.page-header h2,
+.page-header h3,
+.page-header h4 {
+  margin-bottom: 0;
+}
+
+/* Modal — the app-wide pattern for "create/add a new thing" (e.g. "+ Add
+   instance"). Centered dialog over a dimmed backdrop, not a corner-anchored
+   popover (an earlier version anchored to its trigger button; centering it
+   properly reads as an intentional overlay instead of a stray floating
+   box). Closes on backdrop click, Escape, or its own × button — all wired
+   in `components/Modal.tsx`, not per-usage. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.5);
+  padding: var(--space-6);
+}
+
+.modal {
+  width: 360px;
+  max-width: 100%;
+  max-height: calc(100vh - 2 * var(--space-6));
+  overflow-y: auto;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: var(--space-4);
+  text-align: left;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.modal-close {
+  border: 1px solid transparent;
+  background-color: transparent;
+  color: var(--color-text-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 0 var(--space-1);
+  box-shadow: none;
+}
+
+.modal-close:hover:not(:disabled) {
+  color: var(--color-text);
+  background-color: transparent;
+  border-color: transparent;
+}
+
+.stacked-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.stacked-form button {
+  width: 100%;
 }
 
 .back-link {

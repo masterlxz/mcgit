@@ -8,6 +8,7 @@ import type {
   FileChange,
   StructureDiff,
 } from "../../api/world";
+import { Modal } from "../../components/Modal";
 import { RegionChunkMap } from "./RegionChunkMap";
 
 const MAX_BLOCK_DIFFS_SHOWN = 50;
@@ -131,6 +132,7 @@ export function WorldBranches({
   onAbortMerge,
 }: Props) {
   const [newBranchName, setNewBranchName] = useState("");
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [confirmingSwitchFor, setConfirmingSwitchFor] = useState<string | null>(null);
   const [openDiffFor, setOpenDiffFor] = useState<string | null>(null);
   const [openChunksFor, setOpenChunksFor] = useState<string | null>(null);
@@ -181,24 +183,35 @@ export function WorldBranches({
 
   return (
     <div>
-      <form
-        className="inline-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!newBranchName.trim()) return;
-          onCreate(newBranchName.trim());
-          setNewBranchName("");
-        }}
-      >
-        <input
-          value={newBranchName}
-          onChange={(e) => setNewBranchName(e.target.value)}
-          placeholder="New branch name"
-        />
-        <button type="submit" className="btn-primary">
-          Create branch
+      <div className="page-header">
+        <h4>Branches</h4>
+        <button className="btn-primary" onClick={() => setShowCreateForm(true)}>
+          + New branch
         </button>
-      </form>
+      </div>
+      {showCreateForm && (
+        <Modal title="New branch" onClose={() => setShowCreateForm(false)}>
+          <form
+            className="stacked-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!newBranchName.trim()) return;
+              onCreate(newBranchName.trim());
+              setNewBranchName("");
+              setShowCreateForm(false);
+            }}
+          >
+            <input
+              value={newBranchName}
+              onChange={(e) => setNewBranchName(e.target.value)}
+              placeholder="New branch name"
+            />
+            <button type="submit" className="btn-primary">
+              Create branch
+            </button>
+          </form>
+        </Modal>
+      )}
 
       <ul className="branch-list">
         {branches.map((branch) => (

@@ -46,6 +46,8 @@ pub fn run() {
             commands::java::install_java,
             commands::java::add_manual_java,
             commands::java::set_default_java,
+            commands::settings::get_commit_identity,
+            commands::settings::set_commit_identity,
             commands::instance::list_instances,
             commands::instance::list_mc_versions,
             commands::instance::create_vanilla_instance,

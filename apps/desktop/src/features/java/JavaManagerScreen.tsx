@@ -10,6 +10,7 @@ import {
   type InstallProgress,
   type JavaInstallation,
 } from "../../api/java";
+import { Modal } from "../../components/Modal";
 import { AddManualJavaForm } from "./AddManualJavaForm";
 import { InstallProgressBar } from "./InstallProgressBar";
 import { JavaInstallationList } from "./JavaInstallationList";
@@ -21,6 +22,8 @@ export function JavaManagerScreen() {
   const [progress, setProgress] = useState<InstallProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showInstallForm, setShowInstallForm] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -64,6 +67,7 @@ export function JavaManagerScreen() {
     try {
       await installJava(majorVersion);
       await refresh();
+      setShowInstallForm(false);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -87,6 +91,7 @@ export function JavaManagerScreen() {
     try {
       await addManualJava(path);
       await refresh();
+      setShowManualForm(false);
     } catch (err) {
       setError(String(err));
     }
@@ -94,7 +99,7 @@ export function JavaManagerScreen() {
 
   return (
     <section>
-      <h1>Java</h1>
+      <h2>Java</h2>
       {error && <p className="banner banner-error">{error}</p>}
 
       <JavaInstallationList
@@ -108,16 +113,29 @@ export function JavaManagerScreen() {
 
       {progress && <InstallProgressBar progress={progress} />}
 
-      <hr className="section-divider" />
-      <h2>Install a Java version</h2>
-      <JavaVersionPicker
-        versions={installableVersions}
-        onInstall={handleInstall}
-        disabled={busy}
-      />
+      <div className="page-header">
+        <h3>Install a Java version</h3>
+        <button className="btn-primary" onClick={() => setShowInstallForm(true)}>
+          + Install a Java version
+        </button>
+      </div>
+      {showInstallForm && (
+        <Modal title="Install a Java version" onClose={() => setShowInstallForm(false)}>
+          <JavaVersionPicker versions={installableVersions} onInstall={handleInstall} disabled={busy} />
+        </Modal>
+      )}
 
-      <h2>Add manually</h2>
-      <AddManualJavaForm onAdd={handleAddManual} />
+      <div className="page-header">
+        <h3>Add manually</h3>
+        <button className="btn-primary" onClick={() => setShowManualForm(true)}>
+          + Add manually
+        </button>
+      </div>
+      {showManualForm && (
+        <Modal title="Add a Java installation" onClose={() => setShowManualForm(false)}>
+          <AddManualJavaForm onAdd={handleAddManual} />
+        </Modal>
+      )}
     </section>
   );
 }

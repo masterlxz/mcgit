@@ -25,7 +25,7 @@ export function CreateInstanceForm({ versions, onCreate, disabled }: Props) {
   }
 
   return (
-    <form className="inline-form" onSubmit={handleSubmit}>
+    <form className="stacked-form" onSubmit={handleSubmit}>
       <input
         type="text"
         placeholder="Instance name"

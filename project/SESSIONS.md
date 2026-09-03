@@ -1413,3 +1413,41 @@ correção: bug real de `<select>` desabilitado + polimento geral").
 **Estado ao final da sessão**: identidade visual corrigida e polida, sem bugs visuais
 conhecidos. Próxima frente em aberto: Fase 2 (auto-snapshot/auto-gc) ou reabrir Game
 Runner/login Microsoft, a critério do usuário.
+
+---
+
+## Sessão 10 (sexta continuação) — 2026-09-02 — Popup vira modal centralizado + Settings + identidade de commit
+
+Começou com um pedido pontual: "transforma o create instance em um popup no canto superior
+direito por favor, add instance algo assim". Primeira versão: botão `+ Add instance` abrindo um
+painel ancorado ao próprio botão (popover de canto). O usuário reagiu mal ("tá bizarramente feio
+pra krl") e pediu, de uma vez só, 4 mudanças de UX ("simples mas fazem muita diferença"):
+centralizar o popup de verdade, aplicar esse padrão de popup em mais lugares do app que hoje têm
+formulário de criar/adicionar sempre visível, mover a tela de Java pra dentro de uma tela de
+Settings nova (atrás de uma engrenagem), e tornar configurável a identidade usada nos commits
+(nome/e-mail, hoje fixos em `mcgit <mcgit@localhost>`) — pensando em quem for dar push pra um
+remoto que exige e-mail de verdade. Antes de implementar, foi confirmado com o usuário que "Save
+snapshot" (ação mais frequente, inline) não deveria virar popup — só ações de criar/adicionar
+algo (raras, de setup).
+
+Planejado formalmente (Plan Mode) e implementado em duas fatias: Rust primeiro (migration +
+entity + `mcgit-db::settings` + assinaturas em `git.rs` + comandos Tauri), depois frontend
+(componente `Modal` reutilizável, aplicado em Instances/Branches/Java, tela de Settings nova,
+`GitIdentitySettings`). Durante a verificação ao vivo foi encontrado e corrigido um bug real:
+limpar os campos de identidade e salvar gravava strings vazias em vez de apagar as chaves,
+quebrando silenciosamente o fallback pro default em todo commit seguinte — corrigido com
+`set_or_clear` (nova função testada em `mcgit-db::settings`).
+
+Verificado ao vivo pela GUI real: modal centralizado abrindo/fechando corretamente em todos os
+pontos convertidos, navegação por engrenagem, e identidade de commit customizada confirmada
+dentro do `.git` real de um mundo de teste via `git log --format='%an <%ae>'` — inclusive depois
+do fix, confirmando que limpar os campos volta pro default sem deixar lixo no banco.
+`cargo test --workspace` (100% verde) e `npx tsc --noEmit` limpos.
+
+Detalhes completos em `ARCHITECTURE.md` §Identidade Visual & Design System (subseção
+"\"Create instance\" vira popover, depois modal centralizado + Settings + identidade de
+commit").
+
+**Estado ao final da sessão**: popup/modal, navegação simplificada e identidade de commit
+configurável fechados, sem pendências conhecidas. Próxima frente em aberto: Fase 2
+(auto-snapshot/auto-gc) ou reabrir Game Runner/login Microsoft, a critério do usuário.

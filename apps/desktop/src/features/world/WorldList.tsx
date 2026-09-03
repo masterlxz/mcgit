@@ -195,7 +195,6 @@ export function WorldList({
                 <>
                   {openBranchesFor.has(world.folder_name) && (
                     <div className="subsection">
-                      <h4>Branches</h4>
                       <WorldBranches
                         branches={branchesByWorld[world.folder_name] ?? []}
                         diff={diffsByWorld[world.folder_name]}
